@@ -1,0 +1,7 @@
+Project Proposal for CME 323
+
+Manifold Learning in Spark
+
+Charles Zheng, Jingshu Wang, Arzav Jain
+
+Manifold learning is a branch of unsupervised learning concerned with discovering a low-dimensional manifold which captures most of the variation in the data.  Principal components analysis (PCA) can be interpreted as a method for finding a linear manifold (a linear subspace) which captures most of the variation in the data.  However, there also exist methods for learning nonlinear manifolds, most notably Kernel PCA, ISOMAP (Tenenbaum et al 2000) and Hessian Local Linear Embedding (Donoho and Grimes 2003).  While PCA is already implemented in Spark MLlib, none of the nonlinear manifold procedures are avaliable.  The goal of this project is to analyze the feasibility of implementing the following nonlinear manifold learning procedures in Spark, and then to implement one of them: 1) ISOMAP, 2) Hessian LLE, 3) Local Linear Embedding, 4) Laplacian Eigenmaps.  Kernel PCA is trivial to analyze/implement and thus omitted. It may seem ambitious to analyze more than one algorithm, but the algorithms share many similarities and a common analysis with slight variations for each might suffice.  We will demonstrate our implementation on simulated data as well as a functional MRI dataset.
