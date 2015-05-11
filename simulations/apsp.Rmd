@@ -1,0 +1,210 @@
+---
+title: "Randomized All Pairs Shortest Paths"
+author: "Charles Zheng"
+date: "05/11/2015"
+output: html_document
+---
+
+# Requirements
+
+The following libraries must be installed:
+```{r}
+library(Rcpp)
+library(pracma)
+```
+
+# Introduction
+
+Let $A$ be an $n \times n$ symmetric weighted adjacency matrix, with
+$$
+A_{ij} = \begin{cases}
+0 & \text{ if }i = j\\
+A_{ij} & \text{ if there is an edge from $i$ to $j$,}\\
+\infty & \text{ if there is no edge from $i$ to $j$}
+\end{cases}
+$$
+
+# Min-plus multiplication
+
+For $X_{n \times k}$, $Y_{k \times m}$, define $X \otimes Y = Z_{n \times m}$ by:
+$$
+Z_{ij} = \min_{l = 1}^k X_{ik} + Y_{kj}
+$$
+
+The code for min-plus is as follows
+```{r}
+library(Rcpp)
+cppFunction('
+NumericMatrix minplus(NumericMatrix Ar, NumericMatrix Br) {
+  int n = Ar.nrow();
+  int l = Ar.ncol();
+  int m = Br.ncol();
+  NumericMatrix ans(n, m);
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < m; j++) {
+      for (int k = 0; k < l; k++) {
+        double x = Ar(i, k) + Br(k, j);
+        if (x < ans(i, j) || k == 0) {
+          ans(i, j) = x;
+        }
+      }
+    }
+  }
+  return ans;
+}
+'
+)
+```
+
+## Demo
+
+Create a geometric graph on the unit square.
+```{r}
+set.seed(3)
+n <- 5
+eps <- 0.5
+x <- matrix(runif(n * 2), n, 2)
+dm <- distmat(x, x)
+adj <- (dm < eps) + 0
+plot(x, pch = ".")
+for (i in 1:n) {
+  for (j in 1:n) {
+    if (adj[i,j] == 1) {
+      lines(x[, 1][c(i, j)], x[, 2][c(i, j)], col = gray(.5))
+      mid <- (x[i, ] + x[j, ])/2
+      if (i != j) text(mid[1], mid[2], substr(paste(dm[i, j]), 0, 4))
+    }
+  }
+}
+for (i in 1:n) points(x[i, 1], x[i, 2], pch = paste(i), cex = 1.5)
+```
+
+Form the weighted graph matrix $A$ in the format specified previously.
+
+```{r}
+A <- dm * adj
+A[A == 0] <- Inf
+diag(A) <- 0
+A
+```
+
+The shortest length 2 path from node 1 to 2 should be
+```{r}
+A2 <- minplus(A, A)
+A2[1, 2]
+```
+
+Is this correct...? Check the plot.
+
+# Floyd-Warshall and Iterative Squaring
+
+All-pairs shortest paths can either be computed by iterative squaring or Floyd-Warshall
+
+## Iterative squaring
+
+Iterative squaring uses $log(n)$ iterations and costs $n^3$ per iteration.
+
+Each iterate of the algorithm performs the following:
+
+$$
+A \leftarrow A \otimes A
+$$
+
+Code:
+
+```{r}
+iter_square <- function(a) {
+  n <- dim(a)[1]
+  n_its <- ceiling(log(n)/log(2))
+  for (i in 1:n_its) a <- minplus(a, a)
+  a
+}
+```
+
+## Floyd-Warshall
+
+Floyd-Warshall uses $n$ iterations and costs $n^2$ per iteration.
+
+Let $A_k$ denote the $k$ th column of $A$
+The $k$ th iteration of Floyd-Warshall computes
+
+$$
+A \leftarrow min(A, A_k \otimes A_k^T)
+$$
+
+Code:
+
+```{r}
+floyd_warshall <- function(a) {
+  n <- dim(a)[1]
+  for (k in 1:n) {
+    Ak <- a[, k, drop = FALSE]
+    a <- pmin(a, minplus(Ak, t(Ak)))
+  }
+  a
+}
+```
+
+## Demo
+
+Check that both give the same result
+```{r}
+A_is <- iter_square(A)
+A_fw <- floyd_warshall(A)
+sum(A_is != A_fw)
+```
+
+# Generalizing Floyd-Warshall
+
+Both Floyd-Warshall and iterated squaring can be viewed as generalizations of the same algorithm, "block Floyd-Warshall".
+Let $k$ be a block size such that $mk = n$.  Then let
+$$A = [B_1, B_2, ..., B_m]$$
+where each $B_i$ is $n \times k$.
+
+Block Floyd-Warshall has $L$ main iterations.
+Within each main iterate, there are $m$ subiterations, where on the $i$th subiterate,
+$$
+A \leftarrow \min(A, B_i \otimes B_i^T)
+$$
+
+* Floyd-Warshall is the special case where $L=1$ and $k = 1$.
+* Iterated squaring is the special case where $L = \log(n)$ and $k = n$.
+* What about intermediate cases of $L$, $k$??
+
+The number of iterations is $Lm$ and the cost per iteration is $n^2 k$.
+In general, block Floyd-Warshall will *not* compute the correct all-pairs-shortest-paths matrix.
+So why should we care?  See the writeup `apsp_theory.pdf`.
+
+Code is as follows:
+```{r}
+block_fw <- function(a, k, l) {
+  n <- dim(a)[1]
+  m <- ceiling(n/k)
+  for (main_it in 1:l) {
+    for (i in 1:m) {
+      Bi <- a[, ((i-1) * k + 1):min(n, i * k), drop = FALSE]
+      a <- pmin(a, minplus(Bi, t(Bi)))
+    }
+  }
+  a
+}
+```
+
+## Demo
+
+Compare block FW with $k= 2$ and $L = 1$ to the correct distance matrix
+
+```{r}
+A_bfw <- block_fw(A, 2, 1)
+plot(A_is, A_bfw)
+```
+
+In this case, it is exact.
+
+
+# Next
+
+See the writeup `apsp_theory.pdf` and the R markdown `block_fw.Rmd`.
+
+
+
