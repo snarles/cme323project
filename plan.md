@@ -15,6 +15,6 @@ without moving the data in *C*.
 
 If so, we can implemented distributed all-pairs-shortest-paths easily given a subclass of BlockMatrix with two additional methods:
 
-* **def min(other: BlockMatrix): BlockMatrix = ** Takes the elementwise minimum of this [[BlockMatrix]] and other [[BlockMatrix]] (they have to have the same dimension)
-* **def minPlus(other: BlockMatrix): BlockMatrix = ** Multiplies this [[BlockMatrix]] and the other [[BlockMatrix]] according to min-plus multiplication.  The `colsPerBlock` of this matrix must equal the `rowsPerBlock` of `other`
+* ```def min(other: BlockMatrix): BlockMatrix = ``` Takes the elementwise minimum of this [[BlockMatrix]] and other [[BlockMatrix]] (they have to have the same dimension)
+* ```def minPlus(other: BlockMatrix): BlockMatrix = ``` Multiplies this [[BlockMatrix]] and the other [[BlockMatrix]] according to min-plus multiplication.  The `colsPerBlock` of this matrix must equal the `rowsPerBlock` of `other`
 
