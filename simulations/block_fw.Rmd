@@ -1,0 +1,113 @@
+---
+title: "Testing Block Floyd-Warshall"
+author: "Charles Zheng"
+date: "05/11/2015"
+output: html_document
+---
+
+# Requirements
+
+The following libraries must be installed:
+```{r}
+library(Rcpp)
+library(pracma)
+```
+
+# Introduction
+
+See `apsp.Rmd`.  Code from previous:
+
+```{r}
+library(Rcpp)
+cppFunction('
+NumericMatrix minplus(NumericMatrix Ar, NumericMatrix Br) {
+  int n = Ar.nrow();
+  int l = Ar.ncol();
+  int m = Br.ncol();
+  NumericMatrix ans(n, m);
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < m; j++) {
+      for (int k = 0; k < l; k++) {
+        double x = Ar(i, k) + Br(k, j);
+        if (x < ans(i, j) || k == 0) {
+          ans(i, j) = x;
+        }
+      }
+    }
+  }
+  return ans;
+}
+'
+)
+
+block_fw <- function(a, k, l) {
+  n <- dim(a)[1]
+  m <- ceiling(n/k)
+  for (main_it in 1:l) {
+    for (i in 1:m) {
+      Bi <- a[, ((i-1) * k + 1):min(n, i * k), drop = FALSE]
+      a <- pmin(a, minplus(Bi, t(Bi)))
+    }
+  }
+  a
+}
+```
+
+# Problem
+
+Given that block Floyd-Warshall is not guaranteed to compute the APSP matrix exactly, what kind of approximation properties does it have, assuming that the input matrix is pre-shuffled?
+
+Start by looking at a *difficult case* for the all-pairs-shortest-paths problem: a line graph!
+
+```{r}
+line_graph <- function(n, shuffle = TRUE) {
+  A <- matrix(Inf, n, n)
+  A[abs(row(A)-col(A)) == 1] <- 1
+  diag(A) <- 0
+  if (shuffle) {
+    perm <- sample(n, n)
+    A <- A[perm, perm]
+  }
+  A
+}
+line_graph(6, FALSE)
+```
+
+# Block FW on line graph
+
+Generate the line graph and the correct solution (using Floyd-Warshall).
+
+```{r}
+n <- 100
+A <- line_graph(n)
+A_fw <- block_fw(A, 1, 1)
+```
+
+Try block FW with $k = 2$ and $L = 2$.
+
+```{r}
+A_bfw <- block_fw(A, 2, 2)
+sum(A_bfw == Inf)
+sum(A_bfw != A_fw)
+```
+
+Is it exact?
+
+# Line graph simulations
+
+What is the probability of exact recovery depending on $k$ and $L$?
+For each $k$, find the minimum $L$ which gives exact recovery.
+
+```{r}
+find_L <- function(n, k) {
+  A <- line_graph(n)
+  L <- k
+  A_fw <- block_fw(A, 1, 1)
+  flag <- TRUE
+  while (flag) {
+    A_bfw <- block_fw(A, k, L)
+    flag <- (sum(A_bfw != A_fw) == 0)
+    # to be contd
+  }
+}
+```
