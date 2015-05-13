@@ -12,8 +12,11 @@
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{mdframed}
+\usepackage{amsthm}
 %\documentstyle[nips13submit_09,times,art10]{article} % For LaTeX 2.09
-
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
 
 \title{Approximate All-Pairs Shortest Paths}
 
@@ -209,8 +212,8 @@ Also, we assume a homogenous cost of communication between any pair of
 workers.  Let a message $M$ consist of $w$ words.  The time $T(M)$ it
 takes for a worker $\Lambda[i,j]$ to send a message $M$ to another
 worker $\Lambda[k,l]$ consisting of $w$ words is determined by the
-latency of the network $\kappa_L$ and the inverse transmission rate
-$\kappa_T$ and is given by
+latency of the network $\kappa_L$ and the transmission cost (the
+inverse of the transmission rate) $\kappa_T$ and is given by
 \[
 T(M) = \kappa_L + \kappa_T w
 \]
@@ -222,13 +225,13 @@ T_B(M) \approx \log(q) (\kappa_L + \kappa_T w)
 since approximately $\log(q)$ rounds of one-to-one transmission are
 needed.  If multiple messages $M$ are broadcasted simultaneously
 (possible from the same source), the one-to-one communication rounds
-can be arranged in a way so that the waiting time for the entire
-process is only a constant larger than the time for the $\max_M
-T_B(M)$.  Let therefore make the simplifiying assumption that the cost
+can be arranged in a way so that the total number of rounds for the
+entire process is only a constant larger than in the single message
+case.  Let therefore make the simplifiying assumption that the cost
 for the simultaneous broadcast of $b$ messages, all of size $w$, and
 each to $q$ recipients is
 \[
-T_B(M_1,\hdots, M_b) \approx \log(q)(\kappa_L + \kappa_T w) + \kappa_S b
+T_B(M_1,\hdots, M_b) \approx (\log(q) + \kappa_S b)(\kappa_L + \kappa_T w) 
 \]
 where $\kappa_S$ is a constant describing the additional time per
 message.
@@ -262,7 +265,7 @@ and distributed min-plus multiplication.
   \State Let $A[i, \cdot]$ denote the blocks of $A$ owned by workers $\Lambda[i, \cdot]$, and similarly define $B[\cdot, j]$
   \For{$i = 1,\hdots, \sqrt{p}$ and $j = 1,\hdots, \sqrt{p}$, asynchronously}
     \State Broadcast $A'_i = A[i, \cdot]$ to all workers $\Lambda[i, \cdot]$
-    \State Broadcase $B'_j B[\cdot, j]$ to all workers $\Lambda[\cdot, j]$
+    \State Broadcast $B'_j B[\cdot, j]$ to all workers $\Lambda[\cdot, j]$
   \EndFor
   \For{$i, j = 1,\hdots, \sqrt{p}$ in parallel}
     \State Set $C[i, j] \to A'_i \otimes B'_j$
@@ -302,7 +305,7 @@ are already in place on the network.
   Afterwards, each worker must complete a local min-plus multiplication.
   Hence, the waiting time is bounded by
 \[
-\frac{1}{2}\log(p) (\kappa_L + \kappa_T k \max(n, m)/\sqrt{p}) + \kappa_C nmk/p
+(\frac{1}{2}\log(p) + 2\sqrt{p}\kappa_S) (\kappa_L + \kappa_T k \max(n, m)/\sqrt{p}) + \kappa_C nmk/p
 \] 
 \end{itemize}
 We will analyze the cost of {\sc DistributedMPM2} in the following analyses.
@@ -385,11 +388,10 @@ Iterative squaring has $L = d_G$ outer loops.
 \caption{Block Floyd-Warshall}
 \begin{algorithmic}
 \Function{BlockFloydWarshall}{Adjacency matrix $A$}
-  \State Let $M = n/k$.
   \State $S \leftarrow A$
   \For{$l = 1,\hdots, L $}
-    \For{$k = 1,\hdots, M$}
-      \State Let $S = [S_1,\hdots, S_M]$, and $S^T = [s_1^T,\hdots, s_M^T]$
+    \For{$k = 1,\hdots, K$}
+      \State Let $S = [S_1,\hdots, S_K]$, and $S^T = [s_1^T,\hdots, s_K^T]$
       \State $S \leftarrow \min(S,  S_k \otimes s_k)$
     \EndFor
   \EndFor
@@ -398,11 +400,141 @@ Iterative squaring has $L = d_G$ outer loops.
 \end{algorithmic}
 \end{algorithm}
 
-For any given parameter $K$, Block Floyd-Warshall computes the APSP
-matrix given $L \geq n/K$, as stated in the following theorem.
-
+However, for any $k \leq n$, at least $L = d_G$ iterates are needed to
+guarantee convergence to the APSP matrix.  Thus, for computing exact
+solutions, Block Floyd-Warshall is strictly inferior to Iterative
+Squaring.  However, with $L < d_G$ and a pre-shuffled input matrix,
+Block Floyd-Warshall may still achieve a good approximation to the
+APSP matrix, in terms of the proportion of correct entries.
 
 \subsection{Probabilistic Guarantees}
+
+Consider applying the Block Floyd-Warshal algorithm with $K < n$ and $L = 1$.
+Let $\hat{S}$ denote the output of Block Floyd-Warshal.
+Fixing $\nu, \mu \in V$, under what conditions do we have $\hat{S}_{\nu \mu} = S_{\nu \mu}$?
+We have
+\[
+S_{\nu \mu} = \min_{p \in \mathcal{P}_{\nu \mu}} w(p)
+\]
+Take $p = (v_0, \hdots, v_l) \in \tilde{\mathcal{P}}_{ij}$ with $v_0 =
+\nu$ and $v_l = \mu$.  By definition we have $l \leq \ell_G$.
+Recall that $A$ will be partitioned into $K$ column-blocks.
+This gives a corresponding partition of the vertices $V$ into $V_1,\hdots, V_K$.
+First, we show that if no two vertices $v_0, \hdots, v_l$ lies the same partition $V_1,\hdots, V_k$,
+then $\hat{S}_{\nu \mu} = S_{\nu \mu}$.  
+
+\begin{theorem}
+Let $A$ be an $n \times n$, and partition the vertices $V = V_1 \cup
+\hdots \cup V_n$.  Then, define $\hat{S} = \text{\sc
+  BlockFloydWarshall}(A, K, 1)$ with the given partitions, and define
+$S$ as the all-pairs shortest distance matrix for $A$.  Then, for any
+$\nu, \mu \in V$, if $p = (v_0,\hdots, v_l) \in \tilde{\mathcal{P}}_{ij}$,
+and if no two vertices $v_i, v_j$ in the path $p$ lie in the same
+partition $V_k$, i.e.,
+\[
+\max_{k=1}^K |V_k \cap \{v_0,\hdots, v_l\}| = 1
+\]
+then it follows that $\hat{S}_{\nu \mu} = S_{\nu \mu}$.
+\end{theorem}
+
+What we mean by applying {\sc BlockFloydWarshall} with the given
+partitions is to form $A_k$ from the columns corresponding to vertices
+$V_k$ and to form $a_k$ from the rows corresponding to $V_k$ for $i =
+1,\hdots, K$.
+
+\begin{proof}
+Consider the submatrix $\tilde{A}$ corresponding to the subgraph of
+the vertices $v_0,\hdots, v_l$.  Let $\tilde{S}$ be the output of {\sc
+  FloydWarshall} for $\tilde{A}$.  Then by the correctness of Floyd-Warshall algorithm we have
+\[
+\tilde{S}_{0, l} = S_{\nu, \mu}
+\]
+Now we claim that every element in $\tilde{S}$ dominates the corresponding
+element of $\hat{S}$, i.e.
+\[
+\tilde{S}_{ij} \geq \hat{S}_{v_i, v_j}
+\]
+To prove this claim, consider the following correspondence between
+iterates of Block Floyd-Warshall on $A$ and Floyd-Warshall on
+$\tilde{A}$.  For each iteration $i = 1,\hdots, l$ of Floyd-Warshall,
+let $j_i$ denote the iteration of Block Floyd-Warshall where $v_i \in
+V_{j_i}$.  Let $\tilde{S}^{(k)}$ denote the end result of the $k$th
+iterate of Floyd-Warshall and $\hat{S}^{(k)}$ denote the end result of
+the $k$th iterate of Block Floyd-Warshall.
+
+Now define $\alpha$ to be the matrix
+\[
+\alpha_{ij} = \begin{cases}
+A_{ij} & \text{ if } i, j \in \{v_0,\hdots, v_l\}\\
+\infty & \text{ otherwise}
+\end{cases}
+\]
+and let $\alpha^{(k)}$ denote the iterates of Block Floyd-Warshall (with the same partitions) applied to $\alpha$.
+Let $\sigma = \text{\sc BlockFloydWarshall}(\alpha)$.
+
+Observe that $\alpha \leq A$ entrywise, and also that the $(l+1)
+\times (l+1)$ submatrix $\tilde{\alpha}^{(j_k)}$ is equal to the
+matrix $\tilde{S}^{(k)}$.
+
+Finally observe the monotonicity of Block Floyd-Warshall, i.e. for $n
+\times n$ matrices $A, B$, if $A \leq B$ entrywise, then also
+$\text{\sc BlockFloydWarshall}(A) \leq \text{\sc
+  BlockFloydWarshall}(B)$.  Therefore, we have
+\[
+\hat{S} = \text{\sc BlockFloydWarshall}(A) \leq \text{\sc BlockFloydWarshall}(\alpha) = \sigma
+\]
+hence
+\[
+\hat{S}_{v_0, v_l} \leq \sigma_{v_0, v_l} = \tilde{S}_{0, l} = S_{\nu, \mu}
+\]
+implying that $\hat{S}_{\nu, \mu} = S_{\nu,\mu}$.
+\end{proof}
+
+
+More generally, defining the counts
+\[
+c_k = |V_k \cap \{v_0,\hdots, v_l\}|,
+\] 
+then if we apply Block Floyd-Warshall with $L$ outer iterates such that $L \geq \max_k c_k$,
+the 
+
+To control the probability that any two vertices lie in the same
+partition, we now require the matrix $A$ to be \emph{pre-shuffled}.
+Theoretically, this is equivalent to forming the partitions
+$V_1,\hdots, V_K$ by populating each partition by sampling without
+replacement from $V$.
+
+Now, if we take any shortest path for a given pair of vertices, $p =
+(v_0,\hdots, v_l)$, and given that $n/K \to \infty$, the distribution of the counts $c_k$
+are the the same as the distribution of occupancy numbers resulting
+from $l+1$ balls being placed uniformly at random into $K$ bins.
+Hence the distribution of the maximum count $\max_k c_k$ is controlled
+asymptotically by the following well-known result \cite{kolchin1978random}.
+
+\begin{theorem}\emph{(Kolchin, 1978)}
+Suppose $n$ balls are thrown at uniform into $N$ bins.  Let $\alpha =
+n/N$.  If $\alpha/\ln N \to 0$ as $n, N \to \infty$ and $r = r(\alpha,
+N)$ is chosen so that $r > \alpha$ and $N\alpha^k e^{-\alpha}/k! \to \lambda$,
+where $\lambda$ is a positive constant, then
+\begin{align*}
+\Pr[\max_{k=1}^N c_k = r-1] &\to e^{-\lambda}\\
+\Pr[\max_{k=1}^N c_k = r] & \to 1-e^{-\lambda}
+\end{align*}
+where $c_k$ is the number of balls in the $k$th bin.
+\end{theorem}
+
+These results yield a rule for choosing $L$ so as to control the error
+probability of Block Floyd-Warshall, as stated in the following.
+
+\begin{corollary}
+Let $A^{(i)}$ be a sequence of graphs and $p^{(i)} = (v_0,\hdots, v_\ell)$ be a sequence of
+shortest paths within the graphs of growing length $\ell \to \infty$.
+Then for any constant $c$, letting $\hat{S} = \text{\sc BlockFloydWarshall}(A^{(i)}, K, L)$
+with $K = c\ell$ and $L = 1 + \log(\ell)/\log(c)$, we have
+\[
+\Pr[\hat{S}_{v_0, v_\ell} = S_{v_0, v_\ell}] \to 1
+\]
+\end{corollary}
 
 \subsection{Distributed Block Floyd-Warshall}
 

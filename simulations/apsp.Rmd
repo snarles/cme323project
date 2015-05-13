@@ -157,33 +157,33 @@ sum(A_is != A_fw)
 # Generalizing Floyd-Warshall
 
 Both Floyd-Warshall and iterated squaring can be viewed as generalizations of the same algorithm, "block Floyd-Warshall".
-Let $k$ be a block size such that $mk = n$.  Then let
-$$A = [B_1, B_2, ..., B_m]$$
-where each $B_i$ is $n \times k$.
+Let $K$ be a number of blocks such that $mk = n$.  Then let
+$$A = [B_1, B_2, ..., B_K]$$
+where each $B_i$ is $n \times m$.
 
 Block Floyd-Warshall has $L$ main iterations.
-Within each main iterate, there are $m$ subiterations, where on the $i$th subiterate,
+Within each main iterate, there are $K$ subiterations, where on the $k$th subiterate,
 $$
-A \leftarrow \min(A, B_i \otimes B_i^T)
+A \leftarrow \min(A, B_k \otimes B_k^T)
 $$
 
-* Floyd-Warshall is the special case where $L=1$ and $k = 1$.
-* Iterated squaring is the special case where $L = \log(n)$ and $k = n$.
+* Floyd-Warshall is the special case where $L=1$ and $K = n$.
+* Iterated squaring is the special case where $L = \log(n)$ and $K = 1$.
 * What about intermediate cases of $L$, $k$??
 
-The number of iterations is $Lm$ and the cost per iteration is $n^2 k$.
+The number of iterations is $LK$ and the cost per iteration is $n^3/K$.
 In general, block Floyd-Warshall will *not* compute the correct all-pairs-shortest-paths matrix.
 So why should we care?  See the writeup `apsp_theory.pdf`.
 
 Code is as follows:
 ```{r}
-block_fw <- function(a, k, l) {
+block_fw <- function(a, K, l) {
   n <- dim(a)[1]
-  m <- ceiling(n/k)
+  m <- ceiling(n/K)
   for (main_it in 1:l) {
-    for (i in 1:m) {
-      Bi <- a[, ((i-1) * k + 1):min(n, i * k), drop = FALSE]
-      a <- pmin(a, minplus(Bi, t(Bi)))
+    for (k in 1:K) {
+      Bk <- a[, ((k-1) * m + 1):min(n, k * m), drop = FALSE]
+      a <- pmin(a, minplus(Bk, t(Bk)))
     }
   }
   a
@@ -192,10 +192,10 @@ block_fw <- function(a, k, l) {
 
 ## Demo
 
-Compare block FW with $k= 2$ and $L = 1$ to the correct distance matrix
+Compare block FW with $K= 3$ and $L = 1$ to the correct distance matrix
 
 ```{r}
-A_bfw <- block_fw(A, 2, 1)
+A_bfw <- block_fw(A, 3, 1)
 plot(A_is, A_bfw)
 ```
 
@@ -204,7 +204,7 @@ In this case, it is exact.
 
 # Next
 
-See the writeup `apsp_theory.pdf` and the R markdown `block_fw.Rmd`.
+See the writeup `manuscript/apsp.pdf` and the R markdown `simulations/block_fw.Rmd`.
 
 
 
