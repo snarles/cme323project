@@ -1,0 +1,142 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{nips13submit_e,times}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{amssymb, amsmath}
+\usepackage{epsfig}
+\usepackage{array}
+\usepackage{ifthen}
+\usepackage{color}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+%\documentstyle[nips13submit_09,times,art10]{article} % For LaTeX 2.09
+
+
+\title{Large-scale approximate ISOMAP}
+
+
+\author{
+Charles Y.~Zheng and Jinshu Wang\\
+Department of Statistics\\
+Stanford University\\
+Stanford, CA 94305 \\
+\texttt{\{snarles, jinshuw\}@stanford.edu} \\
+\and
+\textbf{Arzav ~Jain} \\
+Department of Computer Science\\
+Stanford University\\
+Stanford, CA 94305 \\
+\texttt{arzavj@stanford.edu} \\
+}
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to \LaTeX{} to determine where to break
+% the lines. Using \AND forces a linebreak at that point. So, if \LaTeX{}
+% puts 3 of 4 authors names on the first line, and the last on the second
+% line, try using \AND instead of \And before the third author name.
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\nipsfinalcopy % Uncomment for camera-ready version
+
+\begin{document}
+
+
+\maketitle
+
+\begin{abstract}
+  Isometric feature mapping (ISOMAP) is an unsupervised method for
+  nonlinear dimensionality reduction (Tenenbaum et al. 2000), intended
+  for exploratory data analysis or feature extraction of complex data
+  with hidden low-dimensional structure, such as text, images, or
+  neurological data.  ISOMAP requires three computationally intensive
+  subroutines: formation of a nearest-neighbors graph, computation of
+  all-pairs shortest-paths for the nearest-neighbors graph and
+  computation of the largest eigenvectors of the centered all-pairs
+  distance matrix.  Traditionally, computation of the
+  all-pairs-distance matrix is $O(n^3)$, and computation of the top
+  eigenvectors is $O(n^2d)$, hence application of single-core ISOMAP
+  scales poorly for large datasets.  Here we propose two approaches to
+  approximating ISOMAP within a distributed framework.  The first is
+  to compute a random subset of the columns of the all-pairs-distance
+  matrix, thus approximating the eigenvectors of the full distance
+  matrix by the left singular vectors of the submatrix.  This results
+  in substantial computational savings because single-source shortest
+  paths algorithms can be used to compute the submatrix rather than
+  all-pairs algorithms, and also because the SVD of the submatrix is
+  much cheaper to compute than the eigenvectors of the full matrix.
+  Meanwhile, the approximation error can be bounded using results on
+  column-sampling SVD (Frieze 2004).  Our second approach is to
+  compute an approximation of the full all-pairs shortest-paths using
+  a blocked version of Floyd-Warhsall algorithm for all-pairs shortest
+  paths.  Our blocked Floyd-Warshall sacrifices accuracy for improved
+  latency; assuming that the data has been pre-shuffled, we show that
+  its error is bounded given appropriate block sizes for small
+  diameter graphs (such as the nearest-neighbor graphs required for
+  ISOMAP).  We implement these approaches in Apache Spark and
+  demonstrate their application on synthetically generated data
+  as well application in fMRI data.
+\end{abstract}
+
+\section{Introduction}
+
+Isometric feature mapping (ISOMAP) is an unsupervised method for
+nonlinear dimensionality reduction \cite{Tenenbaum2000}, intended
+for exploratory data analysis or feature extraction of complex data
+with hidden low-dimensional structure, such as text, images, or
+neurological data.  ISOMAP requires three computationally intensive
+subroutines: formation of a nearest-neighbors graph, computation of
+all-pairs shortest-paths for the nearest-neighbors graph and
+computation of the largest eigenvectors of the centered all-pairs
+distance matrix.  Traditionally, computation of the all-pairs-distance
+matrix is $O(n^3)$, and computation of the top eigenvectors is
+$O(n^2d)$, hence application of single-core ISOMAP scales poorly for
+large datasets.
+
+While a large body of work exists for implementing all-pairs
+shortest-paths and eigendecomposition in supercomputers, our work is
+the first to leverage specific properties of the ISOMAP dimension
+reduction problem to efficiently compute an approximation to the
+ISOMAP coordinates.  A secondary difference between our work and the
+previous literatue is that we are motivated specifically by the Spark
+framework.  While our results could be applicable to distributed
+systems in general and even to single-core systems, our algorithms
+should be especially well-suited for an advanced cluster computing
+framework like Apache Spark \cite{Zaharia2010}.
+
+Here we propose two approaches to approximating ISOMAP within a
+distributed framework.  The first is to compute a random subset of the
+columns of the all-pairs-distance matrix, thus approximating the
+eigenvectors of the full distance matrix by the left singular vectors
+of the submatrix.  This results in substantial computational savings
+because single-source shortest paths algorithms can be used to compute
+the submatrix rather than all-pairs algorithms, and also because the
+SVD of the submatrix is much cheaper to compute than the eigenvectors
+of the full matrix.  Meanwhile, the approximation error can be bounded
+using results on column-sampling SVD\cite{Frieze2004}.
+
+A second approach could be start by computing the full all-pairs
+shortest-paths matrix using a distributed algorithm.  There exists a
+large body of work for all-pairs shortest-paths in the context of
+supercomputing, of these, the most suitable for implementation in the
+\cite{Kumar1991} Our second approach is to compute an approximation of
+the full all-pairs shortest-paths using a blocked version of
+Floyd-Warhsall algorithm for all-pairs shortest paths.  Our blocked
+Floyd-Warshall sacrifices accuracy for improved latency; assuming that
+the data has been pre-shuffled, we show that its error is bounded
+given appropriate block sizes for small diameter graphs (such as the
+nearest-neighbor graphs required for ISOMAP).  We rely on classical
+results on the generalized birthday problem \cite{kolchin1978random}
+for these error bounds.
+
+\small{
+\bibliographystyle{abbrv}
+\bibliography{isomap}
+}
+
+
+
+\end{document}
