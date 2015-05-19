@@ -80,7 +80,7 @@ with $v_0 = i$, $v_l = j$, $l \geq 0$ such that for all $k \in 0,
 \to \hdots \to v_l)$, define the weight of the path $w(p)$ as the sum
 of the edges
 \[
-w(p) = \sum_{i=1}^l e_{v_i, v_{i+1}}
+w(p) = \sum_{i=1}^l w_{v_i, v_{i+1}}
 \]
 and define the \emph{length} of the path $\ell(p)$ as the number of
 edges in the path, $\ell(p) = l$.  For $i, j \in V$ let
@@ -93,7 +93,7 @@ $j$, and $\tilde{\mathcal{P}}_{i, j}$ denote the set of \emph{shortest
 Let $\ell_{i,j}$ be the \emph{minimum length} of the shortest directed
 path in $\mathcal{P}_{i,j}$,
 \[
-\ell_{i,j} = \min_{p \in \tilde{\mathcal{P}}_{i,j}} \ell(p)
+\ell_{i,j} = \min_{p \in \mathcal{P}_{i,j}} \ell(p)
 \]
 Finally, let $\ell_G$ be the \emph{shortest-path diameter} of the graph $G$, defined as
 \[
@@ -120,7 +120,7 @@ A^k = \underbrace{A \otimes A \otimes \cdots \otimes A}_{\text{$k$ times}}
 
 We consider the problem of \emph{all-pairs shortest-paths} (APSP) as the
 following: given an $n \times n$ adjacency matrix $A$ describing graph
-$(G,V)$, compute the $n \times n$ matrix $S$ if all shortest-path distances, with
+$(G,V)$, compute the $n \times n$ matrix $S$ of all shortest-path distances, with
 \[
 S_{ij} = \min_{p \in \mathcal{P}_{i,j}} w(p)
 \]
@@ -265,7 +265,7 @@ and distributed min-plus multiplication.
   \State Let $A[i, \cdot]$ denote the blocks of $A$ owned by workers $\Lambda[i, \cdot]$, and similarly define $B[\cdot, j]$
   \For{$i = 1,\hdots, \sqrt{p}$ and $j = 1,\hdots, \sqrt{p}$, asynchronously}
     \State Broadcast $A'_i = A[i, \cdot]$ to all workers $\Lambda[i, \cdot]$
-    \State Broadcast $B'_j B[\cdot, j]$ to all workers $\Lambda[\cdot, j]$
+    \State Broadcast $B'_j = B[\cdot, j]$ to all workers $\Lambda[\cdot, j]$
   \EndFor
   \For{$i, j = 1,\hdots, \sqrt{p}$ in parallel}
     \State Set $C[i, j] \to A'_i \otimes B'_j$
