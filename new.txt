@@ -1,0 +1,60 @@
+import scala.util._
+import scala.math._
+
+val blocksize = 3
+val nblocks = 3
+val pparts = nblocks * nblocks
+val n = blocksize * nblocks
+
+val in_salt = 2
+val in_mult = 1
+val out_salt = 3
+val out_mult = 5
+
+def in_perm(x : Int) = (x / blocksize) * blocksize + ((in_mult * (x % blocksize) + in_salt) % blocksize)
+def out_perm(x: Int) = (out_mult * x + out_salt) % n
+
+val nums = List.range(0, n)
+val ids = nums.map(in_perm).map(out_perm)
+val blockids = List.range(0, pparts).map{x => (x / blocksize, x % blocksize)}
+val npartitions = 48
+val inf = scala.Double.PositiveInfinity
+
+def dist(x: Int, y:Int): Double = {
+  val diff = ids(x) - ids(y)
+  diff match {
+    case 0 => 0.0
+    case 1 => 1.0
+    case -1 => 1.0
+    case _ => inf
+  }
+}
+
+def trueDist(x: Int, y: Int): Double = math.abs(ids(x) - ids(y))
+
+def buildMatrix(x : (Int, Int)): ((Int, Int), List[((Int, Int), Double)]) = {
+  val inds1 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
+  val inds2 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
+  val p = for (x <- inds1; y <- inds2) yield (x, y)
+  (x, p.map{x => (x, dist(x._1, x._2))})
+}
+
+def buildTrueMatrix(x : (Int, Int)): ((Int, Int), List[((Int, Int), Double)]) = {
+  val inds1 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
+  val inds2 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
+  val p = for (x <- inds1; y <- inds2) yield (x, y)
+  (x, p.map{x => (x, trueDist(x._1, x._2))})
+}
+
+
+val blocks = blockids.map(buildMatrix)
+val elements = blocks.flatMap{_._2.toList}
+val groundTruth = blockids.map(buildTrueMatrix).flatMap{_._2.toList}
+
+val npartitions = 9
+val blocks = sc.parallelize(blockids, npartitions).map(buildMatrix)
+val elements = blocks.flatMap(_._2.toList)
+val groundTruth = sc.parallelize(blockids, npartitions).map(buildTrueMatrix).flatMap(_._2.toList)
+val compare = elements.join(groundTruth)
+compare.filter(x => x._2._1 != x._2._2).count
+
