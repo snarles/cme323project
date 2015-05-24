@@ -34,27 +34,72 @@ def trueDist(x: Int, y: Int): Double = math.abs(ids(x) - ids(y))
 
 def buildMatrix(x : (Int, Int)): ((Int, Int), List[((Int, Int), Double)]) = {
   val inds1 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
-  val inds2 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
+  val inds2 = List.range(x._2 * blocksize, (x._2+1) * blocksize)
   val p = for (x <- inds1; y <- inds2) yield (x, y)
   (x, p.map{x => (x, dist(x._1, x._2))})
 }
 
 def buildTrueMatrix(x : (Int, Int)): ((Int, Int), List[((Int, Int), Double)]) = {
   val inds1 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
-  val inds2 = List.range(x._1 * blocksize, (x._1+1) * blocksize)
+  val inds2 = List.range(x._2 * blocksize, (x._2+1) * blocksize)
   val p = for (x <- inds1; y <- inds2) yield (x, y)
   (x, p.map{x => (x, trueDist(x._1, x._2))})
 }
 
-
-val blocks = blockids.map(buildMatrix)
-val elements = blocks.flatMap{_._2.toList}
-val groundTruth = blockids.map(buildTrueMatrix).flatMap{_._2.toList}
+import org.apache.spark.HashPartitioner
 
 val npartitions = 9
-val blocks = sc.parallelize(blockids, npartitions).map(buildMatrix)
+val part = new HashPartitioner(npartitions)
+val blocks = sc.parallelize(blockids, npartitions).map(buildMatrix).partitionBy(part)
 val elements = blocks.flatMap(_._2.toList)
 val groundTruth = sc.parallelize(blockids, npartitions).map(buildTrueMatrix).flatMap(_._2.toList)
 val compare = elements.join(groundTruth)
-compare.filter(x => x._2._1 != x._2._2).count
+val errors = compare.filter(x => x._2._1 != x._2._2).collect
 
+def extractRowSlice(k : Int)(x: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
+  x.filter(v => (v._1._1 == k))
+}
+
+def extractColSlice(k : Int)(x: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
+  x.filter(v => (v._1._2 == k))
+}
+
+def replicateRow(x: ((Int, Int), List[((Int, Int), Double)])): List[((Int, Int), List[((Int, Int), Double)])] = {
+  for (i <- List.range(0, nblocks)) yield((i, x._1._2), x._2)
+}
+
+def replicateCol(x: ((Int, Int), List[((Int, Int), Double)])): List[((Int, Int), List[((Int, Int), Double)])] = {
+  for (i <- List.range(0, nblocks)) yield((x._1._1, i), x._2)
+}
+
+def update(k : Int)(x: (List[((Int, Int), Double)], List[((Int, Int), Double)])) : List[((Int, Int), Double)] = {
+  val matrix = x._1
+  val subblock = x._2
+  val m = subblock.map(x => x._1 -> x._2).toMap
+  for (v <- matrix) yield {
+    val i = v._1._1
+    val j = v._1._2
+    val wij = v._2
+    val wnew = min(wij, m((i, k)) + m((k, j)))
+    (v._1, wnew)
+  }
+}
+
+var allblocks = List(blocks)
+
+for (k <- 0 to n-1) {
+  println(k)
+  val blockind = k/blocksize
+  val exRow = allblocks(k).filter(x => (x._1._1== blockind)).mapValues(extractRowSlice(k))
+  val exCol = allblocks(k).filter(x => (x._1._2== blockind)).mapValues(extractColSlice(k))
+  val dupRow = exRow.flatMap(replicateRow)
+  val dupCol = exCol.flatMap(replicateCol)
+  val dups = dupRow.join(dupCol, part).mapValues(x => x._1.union(x._2))
+  val newblocks = allblocks(k).join(dups, part).mapValues(update(k))
+  allblocks = allblocks :+ newblocks
+}
+
+var blocks = allblocks(n)
+val elements = blocks.flatMap(_._2.toList)
+val compare = elements.join(groundTruth)
+val errors = compare.filter(x => x._2._1 != x._2._2).count
