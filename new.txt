@@ -1,8 +1,9 @@
 import scala.util._
 import scala.math._
+import org.apache.spark.HashPartitioner
 
-val blocksize = 3
-val nblocks = 3
+val blocksize = 9
+val nblocks = 9
 val pparts = nblocks * nblocks
 val n = blocksize * nblocks
 
@@ -17,7 +18,6 @@ def out_perm(x: Int) = (out_mult * x + out_salt) % n
 val nums = List.range(0, n)
 val ids = nums.map(in_perm).map(out_perm)
 val blockids = List.range(0, pparts).map{x => (x / blocksize, x % blocksize)}
-val npartitions = 48
 val inf = scala.Double.PositiveInfinity
 
 def dist(x: Int, y:Int): Double = {
@@ -46,15 +46,12 @@ def buildTrueMatrix(x : (Int, Int)): ((Int, Int), List[((Int, Int), Double)]) = 
   (x, p.map{x => (x, trueDist(x._1, x._2))})
 }
 
-import org.apache.spark.HashPartitioner
 
-val npartitions = 9
+val npartitions = 48
 val part = new HashPartitioner(npartitions)
 val blocks = sc.parallelize(blockids, npartitions).map(buildMatrix).partitionBy(part)
 val elements = blocks.flatMap(_._2.toList)
 val groundTruth = sc.parallelize(blockids, npartitions).map(buildTrueMatrix).flatMap(_._2.toList)
-val compare = elements.join(groundTruth)
-val errors = compare.filter(x => x._2._1 != x._2._2).collect
 
 def extractRowSlice(k : Int)(x: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
   x.filter(v => (v._1._1 == k))
@@ -102,4 +99,10 @@ for (k <- 0 to n-1) {
 var blocks = allblocks(n)
 val elements = blocks.flatMap(_._2.toList)
 val compare = elements.join(groundTruth)
+
+val time1 : Long = System.currentTimeMillis / 1000
 val errors = compare.filter(x => x._2._1 != x._2._2).count
+val time2 : Long = System.currentTimeMillis / 1000
+
+time2 - time1
+errors
