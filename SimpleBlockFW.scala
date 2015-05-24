@@ -165,9 +165,9 @@ for (k <- 0 to niters-1) {
 }
 
 // The final updated RDD
-var blocks = allblocks(niters)
+val fblocks = allblocks(niters)
 // Extract the individual entries as an RDD
-val elements = blocks.flatMap(_._2.toList)
+val elements = fblocks.flatMap(_._2.toList)
 // Join with the correct APSP matrix for comparison
 val compare = elements.join(groundTruth)
 
