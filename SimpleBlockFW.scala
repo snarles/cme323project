@@ -3,7 +3,7 @@
   *
   * A test of a very minimalistic version of Block-FW (very inefficient)
   * Demonstrates running time and approximation error of Block-FW
-  * Tests the algorithm on a random chain graph 
+  * Tests the algorithm on a randomly shuffled 1D, 2D, or 3D lattice graph
   */
 
 import scala.util._
@@ -12,18 +12,19 @@ import org.apache.spark.HashPartitioner
 import org.apache.spark.mllib.random.UniformGenerator
 
 /**
- * Make sure the blocksize is divisible by many different numbers!
+ * Problem parameters
  */
+
+//Choose the dimension of the lattice (1, 2, 3)
+val dim = 1
+//Set randomness
+val seed = 2
+
+// Size of the problem and how data is stored (blocks)
 val blocksize = 6
 val nblocks = 3
 val pparts = nblocks * nblocks
 val n = blocksize * nblocks
-
-/**
- * Shuffle vertices psuedorandomly
- */
-val r = new UniformGenerator()
-val ids = (for (i <- 0 to n-1) yield(r.nextValue())).zipWithIndex.sortBy(_._1).map(_._2)
 
 /**
  * Choose the sub-block size (for Block FW).
@@ -34,11 +35,32 @@ val ids = (for (i <- 0 to n-1) yield(r.nextValue())).zipWithIndex.sortBy(_._1).m
 val subsize = 3
 
 /**
- * Distance function between two vertices (yielding a chain graph)
+ * Shuffle vertices psuedorandomly
+ */
+val r = new UniformGenerator()
+r.setSeed(seed)
+val ids = (for (i <- 0 to n-1) yield(r.nextValue())).zipWithIndex.sortBy(_._1).map(_._2)
+
+
+/**
+ * Functions for defining the adjacency matrix
  */
 
+// Infinity, to be used to indicate abscence of an edge
+val inf = scala.Double.PositiveInfinity
+
+// edge length of graph
+val width = ceil(pow(n.toFloat, 1/(dim.toFloat))).toInt
+val divs = Vector.range(0, dim).map(i => pow(width, i).toInt).reverse
+
+// d-Dimensional lattice coordinates of each point
+def coords(x: Int): Vector[Int] = {
+  Vector.range(0, dim).map(i => (ids(x)/divs(i)) % width)
+}
+
+// Adjacency matrix
 def dist(x: Int, y:Int): Double = {
-  val diff = ids(x) - ids(y)
+  val diff = (for (i <- 0 to dim - 1) yield(abs(coords(x)(i) - coords(y)(i)))).sum
   diff match {
     case 0 => 0.0
     case 1 => 1.0
@@ -47,11 +69,8 @@ def dist(x: Int, y:Int): Double = {
   }
 }
 
-/**
- * Shortest path distance function between two vertices (yielding a chain graph)
- */
-
-def trueDist(x: Int, y: Int): Double = math.abs(ids(x) - ids(y))
+// Shortest path distance function between two vertices (L1 distance of coordinates)
+def trueDist(x: Int, y: Int): Double = (for (i <- 0 to dim - 1) yield(abs(coords(x)(i) - coords(y)(i)))).sum
 
 /**
  * Function for building the block of the adjacency matrix from the block indices
@@ -84,9 +103,6 @@ val npartitions = min(pparts, 48)
 
 // A list of BLOCK indices (there are p of them)
 val blockids = List.range(0, pparts).map{x => (x / nblocks, x % nblocks)}
-
-// Infinity, to be used to indicate abscence of an edge
-val inf = scala.Double.PositiveInfinity
 
 // Partitioner to be used by the adjency matrix
 val part = new HashPartitioner(npartitions)
