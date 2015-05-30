@@ -1,8 +1,8 @@
-/** Simple Block-FW test (Spark)
+/** Simple Block-APSP test (Spark)
   * Charles Zheng
   *
-  * A test of a very minimalistic version of Block-FW (very inefficient)
-  * Demonstrates running time and approximation error of Block-FW
+  * A test of a very minimalistic version of Block-APSP
+  * Demonstrates running time and checks exactness of Block-APSP
   * Tests the algorithm on a randomly shuffled 1D, 2D, or 3D lattice graph
   */
 
@@ -24,7 +24,7 @@ val seed = 2
 
 // Size of the problem and how data is stored (blocks)
 val blocksize = 6
-val nblocks = 3
+val nblocks = 2
 val pparts = nblocks * nblocks
 val n = blocksize * nblocks
 
@@ -34,15 +34,15 @@ val n = blocksize * nblocks
  * Set subsize = 1 for Original Floyd-Warshall
  */
 
-val subsize = 1
+val subsize = 3
 
 /**
  * Shuffle vertices psuedorandomly
  */
 val r = new UniformGenerator()
 r.setSeed(seed)
-val ids = (for (i <- 0 to n-1) yield(r.nextValue())).zipWithIndex.sortBy(_._1).map(_._2)
-
+//val ids = (for (i <- 0 to n-1) yield(r.nextValue())).zipWithIndex.sortBy(_._1).map(_._2)
+val ids = List.range(0, n)
 
 /**
  * Functions for defining the adjacency matrix
@@ -120,6 +120,12 @@ val groundTruth = sc.parallelize(blockids, npartitions).map(buildTrueMatrix).fla
  * k = sub-block number, from 0 to (n/subsize) - 1
  */
 
+
+// Extracts the elements of the matrix with both indices in ((k-1) * subsize) to ((k * subsize) - 1)
+def extractSquare(k: Int)(x: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
+  x.filter(v => (v._1._1/subsize == k  && v._1._2/subsize == k))
+}
+
 // Extracts the rows of the matrix with indices ((k-1) * subsize) to ((k * subsize) - 1)
 def extractRowSlice(k : Int)(x: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
   x.filter(v => (v._1._1/subsize == k))
@@ -130,6 +136,39 @@ def extractColSlice(k : Int)(x: List[((Int, Int), Double)]) : List[((Int, Int), 
   x.filter(v => (v._1._2/subsize == k))
 }
 
+// Updates the row slice using the square matrix
+def updateRowSlice(k: Int, x: List[((Int, Int), Double)])(y: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
+  val xm = x.map(x => x._1 -> x._2).toMap
+  val ym = y.map(x => x._1 -> x._2).toMap
+  val matrix = y
+  for (v <- matrix) yield {
+    val i = v._1._1
+    val j = v._1._2
+    var wij = v._2
+    for (l <- 0 to subsize - 1) {
+      wij = min(wij, xm((i, k * subsize + l)) + ym((k * subsize + l, j)))
+    }
+    (v._1, wij)
+  }
+}
+
+// Updates the column slice using the square matrix
+def updateColSlice(k: Int, x: List[((Int, Int), Double)])(y: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
+  val xm = x.map(x => x._1 -> x._2).toMap
+  val ym = y.map(x => x._1 -> x._2).toMap
+  val matrix = y
+  for (v <- matrix) yield {
+    val i = v._1._1
+    val j = v._1._2
+    var wij = v._2
+    for (l <- 0 to subsize - 1) {
+      wij = min(wij, ym((i, k * subsize + l)) + xm((k * subsize + l, j)))
+    }
+    (v._1, wij)
+  }
+}
+
+
 // Makes copies of each piece of each row for every block in the column
 def replicateRow(x: ((Int, Int), List[((Int, Int), Double)])): List[((Int, Int), List[((Int, Int), Double)])] = {
   for (i <- List.range(0, nblocks)) yield((i, x._1._2), x._2)
@@ -139,6 +178,21 @@ def replicateRow(x: ((Int, Int), List[((Int, Int), Double)])): List[((Int, Int),
 def replicateCol(x: ((Int, Int), List[((Int, Int), Double)])): List[((Int, Int), List[((Int, Int), Double)])] = {
   for (i <- List.range(0, nblocks)) yield((x._1._1, i), x._2)
 }
+
+
+// Local FW for a matrix of size l
+def localFW(k: Int)(x: List[((Int, Int), Double)]) : List[((Int, Int), Double)] = {
+  var m = collection.mutable.Map() ++ x.map(x => x._1 -> x._2).toMap
+  for (kk <- (k * subsize) to ((k + 1) * subsize - 1)) {
+    for (ii <- (k * subsize) to ((k + 1) * subsize - 1)) {
+      for (jj <- (k * subsize) to ((k + 1) * subsize - 1)) {
+        m((ii, jj)) = min(m(ii, jj), m(ii, kk) + m(kk, jj))
+      }
+    }
+  }
+  m.toList
+}
+
 
 // The block-FW iteration
 def update(k : Int)(x: (List[((Int, Int), Double)], List[((Int, Int), Double)])) : List[((Int, Int), Double)] = {
@@ -169,24 +223,30 @@ val niters = n/subsize
 // The updated RDD per iteration is stored as an element of a list
 var allblocks = List(blocks)
 
+blocks.count
+val time1 : Long = System.currentTimeMillis
 // The n/subsize iterations of Block-FW
 for (k <- 0 to niters-1) {
   println(k)
   val blockind = k*subsize/blocksize
+  val exSquare0 = allblocks(k).filter(x => (x._1._1== blockind && x._1._2 == blockind)).mapValues(extractSquare(k)).collect()
+  val exSquare = exSquare0(0)._2
+  val x = localFW(k)(exSquare)
   val exRow = allblocks(k).filter(x => (x._1._1== blockind)).mapValues(extractRowSlice(k))
+  val exRow2 = exRow.mapValues(updateRowSlice(k, x))
   val exCol = allblocks(k).filter(x => (x._1._2== blockind)).mapValues(extractColSlice(k))
-  val dupRow = exRow.flatMap(replicateRow)
-  val dupCol = exCol.flatMap(replicateCol)
+  val exCol2 = exCol.mapValues(updateColSlice(k, x))
+  val dupRow = exRow2.flatMap(replicateRow)
+  val dupCol = exCol2.flatMap(replicateCol)
   val dups = dupRow.join(dupCol, part).mapValues(x => x._1.union(x._2))
   val newblocks = allblocks(k).join(dups, part).mapValues(update(k))
-  if (k % 20 == 0) {
-    newblocks.checkpoint()
-  }
   allblocks = allblocks :+ newblocks
 }
-
 // The final updated RDD
 val fblocks = allblocks(niters)
+
+fblocks.count
+val time2 : Long = System.currentTimeMillis
 // Extract the individual entries as an RDD
 val elements = fblocks.flatMap(_._2.toList)
 // Join with the correct APSP matrix for comparison
@@ -196,10 +256,9 @@ val compare = elements.join(groundTruth)
  * Kicks off the calculation and records the time
  */
 
-val time1 : Long = System.currentTimeMillis
 val errorsRDD = compare.filter(x => x._2._1 != x._2._2)
 val errors = errorsRDD.count
-val time2 : Long = System.currentTimeMillis
+
 
 /**
  * Check the results
