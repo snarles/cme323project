@@ -1,3 +1,5 @@
+library(pracma)
+
 # Floyd Warshall
 fw <- function(a) {
   n <- dim(a)[1]; inds <- 1:n
@@ -100,5 +102,17 @@ plotl <- function(a, a_new, lwd = 2, cc = "blue", pch = "o",
   }
 }
 
+image2 <- function(a, ...) {
+  image(fliplr(t(a)), ...)
+}
+
+# plots matrix
+plotm <- function(a, a_new) {
+  n <- dim(a)[1]
+  cc <- c("white", "black", "blue")
+  mat <- (a < Inf) + 0
+  mat[a == Inf & a_new < Inf] <- 2
+  image2(mat, col = cc, zlim = c(0, 2), axes = FALSE)
+}
 
 
