@@ -1,0 +1,74 @@
+---
+title: "Circle Plots"
+author: "Charles Zheng"
+date: "05/30/2015"
+output: html_document
+---
+
+Circle plots demo
+
+```{r}
+source('source.R')
+```
+
+# Floyd-Warshall
+
+Setup
+
+```{r, fig.height=7, fig.width=7}
+n <- 6
+blocksize <- 1
+a <- circle_graph(n)
+plotg(a)
+```
+
+Iterations
+```{r, fig.height=7, fig.width=7}
+for (it in 1:n) {
+  inds <- (blocksize * (it-1) + 1):(blocksize * it)
+  a_new <- a
+  a_new[inds, inds] <- fw(a[inds, inds, drop = FALSE])
+  a_new <- minplus(a[, inds, drop = FALSE], a[inds, , drop = FALSE], a)
+  plotg(a, inds = inds)
+  plotl(a, a_new)
+  a <- a_new
+  title(paste("Iteration", it))
+}
+```
+
+# Block APSP
+
+```{r, fig.height=7, fig.width=7}
+n <- 24
+blocksize <- 8
+a <- circle_graph(n)
+plotg(a)
+it <- 0
+for (it in 1:3) {
+  
+  inds <- (blocksize * (it-1) + 1):(blocksize * it)
+  a_new <- a
+  a_new[inds, inds] <- fw(a[inds, inds, drop = FALSE])
+  plotg(a, inds = inds)
+  plotl(a, a_new)
+  a <- a_new
+  title(paste("Iteration", it, "a"))
+  
+  a_new[inds, ] <- minplus(a[inds, inds, drop = FALSE], a[inds, , drop = FALSE],
+                         a[inds, , drop = FALSE])
+  a_new[, inds] <- minplus(a[, inds, drop = FALSE], a[inds, inds, drop = FALSE],
+                           a[, inds, drop = FALSE])
+  plotg(a, inds = inds)
+  plotl(a, a_new, inds = inds)
+  title(paste("Iteration", it, "b"))
+  a <- a_new
+  
+  a_new <- minplus(a[, inds, drop = FALSE], a[inds, , drop = FALSE], a)
+  plotg(a, inds = inds)
+  plotl(a, a_new, inds = inds)
+  title(paste("Iteration", it, "c"))
+  a <- a_new
+  
+  
+}
+```

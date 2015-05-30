@@ -34,7 +34,7 @@ val n = blocksize * nblocks
  * Set subsize = 1 for Original Floyd-Warshall
  */
 
-val subsize = 3
+val subsize = 1
 
 /**
  * Shuffle vertices psuedorandomly
