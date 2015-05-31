@@ -90,7 +90,7 @@ plotl <- function(a, a_new, lwd = 2, cc = "blue", pch = "o",
   n <- dim(a)[1]
   xs <-cos(1:n/n * 2 * pi)
   ys <- sin(1:n/n * 2 * pi)
-  tvals <- (a_new < Inf) & (a == Inf)
+  tvals <- a_new < a
   newedges <- cbind(row(a)[tvals], col(a)[tvals])
   for (x in data.frame(t(newedges))) {
     if (x[1] > x[2]) {
@@ -111,7 +111,7 @@ plotm <- function(a, a_new) {
   n <- dim(a)[1]
   cc <- c("white", "black", "blue")
   mat <- (a < Inf) + 0
-  mat[a == Inf & a_new < Inf] <- 2
+  mat[a_new < a] <- 2
   image2(mat, col = cc, zlim = c(0, 2), axes = FALSE)
 }
 

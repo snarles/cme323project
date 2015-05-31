@@ -33,6 +33,7 @@ for (it in 1:n) {
   plotl(a, a_new)
   a <- a_new
   title(paste("Iteration", it))
+  print(a)
 }
 ```
 
