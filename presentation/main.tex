@@ -361,15 +361,9 @@ Iteration 2: Do the same for block 2 on the diagonal
 \emph{Problem setup}
 \begin{itemize}
 \item Input format: Given by \emph{dense} adjacency matrix, stored as {\tt BlockMatrix} $S$ with block size $b$
+\item Number of vertices $n$ is large
 \item Output format: same
-\item Let $S[i, j]$ denote the $i, j$th block of $S$
-\item Each worker holds $\frac{n^2}{b^2p}$ contiguous blocks
-\end{itemize}
-\emph{Scaling}
-\begin{itemize}
-\item Number of vertices $n \to \infty$
-\item Number of workers $p \to \infty$
-\item Block size $b$ constant
+\item Each block fits in memory
 \end{itemize}
 \end{frame}
 
