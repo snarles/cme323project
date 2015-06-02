@@ -131,17 +131,16 @@ S^{\ell 1} & S^{\ell 2} & \cdots & S^{\ell \ell}
 \end{pmatrix}
 \]
 
-Let $p$ be the number of workers.  Let $M$ be the memory of ech
-worker.  Suppose each worker holds $K$ contiguous blocks.  It must be
-the case that $K < M/b^2$.  In fact, $K$ is even smaller because each
-worker will have to hold additional data in memory.
-
 \subsection{Scaling}
 
-We consider the scaling $n \to \infty$ and $p \to \infty$.  We do
-\emph{not} assume a sparse graph $G$, so the number of edges can scale
-as $E \sim n^2$.  However $b$ must be constant since we assume each
-block must fit in memory.
+We consider the scaling $n$ possibly larger than the memory per
+worker.  We do \emph{not} assume a sparse graph $G$, so the number of
+edges can scale as $E \sim n^2$.
+
+Let $p$ be the number of workers.  We assume the memory of each worker
+is fixed.  Therefore $b$ must be constant since we assume each block
+must fit in memory, and $p$ must increase as $n$ increases.
+
 
 \subsection{Notation}
 
@@ -208,7 +207,7 @@ the results of each iteration.
       \State Checkpoint $S^{(k)}$
     \EndIf
   \EndFor
-  \State Return $S = S^{(n/b)}$, the APSP matrix in {\tt BlockMatrix} form
+  \State Return $S = S^{(\ell)}$, the APSP matrix in {\tt BlockMatrix} form
 \EndFunction
 \end{algorithmic}
 \end{algorithm}
@@ -231,8 +230,10 @@ One can also consider the \emph{communication cost} scaling in terms
 of the amount of data tranferred over the network.  The paper by
 Solomonik et al. (2013) derived a theoretical lower bound on the
 communication cost of APSP as $\Omega(\frac{n^2}{p^{2/3}})$ words.  In
-comparison, our algorithm communicates a total of $O(n^2\sqrt{p} + \frac{n}{b}\sqrt{p})$
-words, which is worse by a power of $p$.
+comparison, our algorithm communicates a total of $O(n^2\sqrt{p} +
+\frac{n}{b}\sqrt{p})$ words, which is worse by a power of $p$.  Note
+however that distributed Floyd-Warshall has the same $O(n^2\sqrt{p})$
+bandwidth.
 
 \subsection{Communication Cost and Type}
 
@@ -241,14 +242,14 @@ communication in each step of the algorithm.  The A-step involves a
 one-to-one communication of a matrix of size $b \times b$ from a
 worker to the driver, involving a bandwidth of $O(b^2)$ words.  The
 B-step involves a one-to-all broadcast of a matrix of size $b\times b$
-from the driver to $\sqrt{p}$ workers, hence a bandwidth of $O(b^2
-\sqrt{p})$ words.  The C-step involves an all-to-all communication (a
-map-side join) where each worker recieves two $n/\sqrt{p} \times b$
-matrices, and therefore entails a bandwidth of $O(nb\sqrt{p})$.
-Therefore the per-iteration bandwidth is $O((1 + \sqrt{p})b^2 +
-\frac{nb}{\sqrt{p}})$.  The total bandwidth for the algorithm is
-$O(n^2\sqrt{p}b + n(1+\sqrt{p})b)$.  See section 3 for the derivation
-of the bandwidth per step.
+from the driver to $p$ workers, hence a bandwidth of $O(b^2 p)$ words.
+The C-step involves an all-to-all communication (a map-side join)
+where each worker recieves two $n/\sqrt{p} \times b$ matrices, and
+therefore entails a bandwidth of $O(nb\sqrt{p})$.  Therefore the
+per-iteration bandwidth is $O(pb^2 + nb\sqrt{p})$.
+There are $n/b$ iterations, so the total bandwidth for the algorithm
+is $O(n^2\sqrt{p} + pnb)$.  See section 3 for the
+derivation of the bandwidth per step.
 
 \section{Background}
 
@@ -616,6 +617,8 @@ Hence we have shown
 S^{(k)}_{ab} = w(a \to W_k^* \to b)
 \]
 as needed.
+
+\section{Results}
 
 \section{References}
 \begin{itemize}
