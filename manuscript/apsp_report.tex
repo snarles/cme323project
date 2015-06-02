@@ -213,6 +213,8 @@ the results of each iteration.
 \end{algorithmic}
 \end{algorithm}
 
+Correctness is proved in section 4.
+
 \subsection{Optimality}
 
 The single-core cost of Floyd-Warshall, the best known single-core
@@ -250,7 +252,7 @@ of the bandwidth per step.
 
 \section{Background}
 
-\section{Analysis}
+\section{Complexity Analysis}
 
 In each step we give the \emph{computational cost} (computation done
 on each worker), the \emph{bandwidth} (number of words sent) and the
@@ -280,21 +282,12 @@ operations:
 where $\kappa_T$ describes the rate of transmission
 \item Time taken to \emph{broadcast} $m$ words from the driver to all workers is given by
 \[
-B(m, p) = \log(p) T(m)
+\log(p) \kappa_T m
 \]
 due to the usage of bittorrent broadcast.
-\item We give a worst-case analysis for simultaneous transmission.
+\item Costs of checkpointing are considered in the latency-added analysis
 \end{enumerate}
 
-Note in particular that assumption 4 assumes a \emph{uniform} network
-topology so the transmission rate from any worker to any other worker
-is equal.  This is in contrast to the \emph{grid} or \emph{hypercube}
-topologies considered in most of the existing literature on
-distributed APSP.
-
-Note that we do not account for random variation in the time taken to
-transmit messages, which is a potentially significant source of
-additional runtime in practical application.
 
 \subsection{A-step}
 
@@ -435,15 +428,180 @@ Adding the computation per worker, the total runtime is
 2\kappa_T nb + \kappa_M \frac{n^2b}{p}
 \]
 
+\subsection{Latency-Free Totals}
+
+We add up the costs derived for each step, and multiply by the number of iterations $\ell = n/b$.
+
+\emph{Computational cost}:
+\[
+\kappa_M n^3 + 2\kappa_M n^2 b + \kappa_F n b^2
+\]
+
+\emph{Bandwidth}:
+\[
+2n^2 \sqrt{p} + 2n \sqrt{p} b + nb
+\]
+
+\emph{Runtime}:
+\[
+\kappa_M \frac{n^3}{p} + \kappa_M \frac{bn^2}{\sqrt{p}} + 2\kappa_T n^2 + \kappa_F nb^2 + (\log(p) + 1)\kappa_T nb
+\]
+
+\subsection{Latency-Added Analysis}
+
+Here we \emph{uniform} network topology so the latency of transmission
+is the same for every pair of workers.  This is in contrast to the
+\emph{grid} or \emph{hypercube} topologies considered in most of the
+existing literature on distributed APSP.
+
+Here we will consider large-$p$ asymptotics so that that analysis is
+not sensitive to the distribution of the lag, as long as has
+exponential tails.
+
+We assume the following model for latency:
+\begin{itemize}
+\item Whenever a machine transmits a message to another machine, it
+  must wait a random amount of time $T$ to make contact with the
+  recipient.  After contact is made, data is transferred at the rate
+  $\frac{1}{\kappa_T}$.
+\item The lags $T$ are independent and identically distributed.
+For iid lags $T_i$ we have
+\[
+\text{E} \sup_{i=1}^p T_i = \kappa_L \log p
+\]
+where $\kappa_L$ is some constant.
+\item \emph{Checkpointing:} Writing $m$ bytes to disk takes $\kappa_C
+  m$ runtime and does not cost bandwidth nor CPU.
+\end{itemize}
+
+As a consequence of these assumptions, one-to-one communications incur
+zero additional runtime due to lag, one-to-all (broadcast)
+communications incur $\kappa_L \log^2 p$ additional runtime due to
+lag and all-to-all communications incur $p \kappa_L \log(p)$ additional
+runtime due to lag.
+
+Given that the algorithm involves one one-to-one communication, one
+one-to-all communcation, four all-to-all communications, and $1/q$
+checkpointing operations per iteration, the added runtime from latency
+and checkpointing is
+\[
+L = \kappa_L(\log^2(p) + 4p\log(p)) + \kappa_C \frac{n^2}{pq}
+\]
+
+The runtime of the algorithm is given by
+\[
+L\frac{n}{b} + \kappa_M \frac{n^3}{p} + \kappa_M \frac{bn^2}{\sqrt{p}} + 2\kappa_T n^2 + \kappa_F nb^2 + (\log(p) + 1)\kappa_T nb
+\]
 
 
+\section{Correctness}
 
+\subsection{Notation}
 
+We assume a complete weighted and directed graph (with all possible
+arcs).  Any incomplete graph is equivalent to the complete graph
+where missing edges are represented by infinite-weight edges.
 
+\begin{itemize}
+\item If $i, j \in V$, let $i \to j$ denote the arc from $i$ to $j$.  An arc is also a path (of length 1).
+\item If $v_1, \hdots, v_m \in V$, then $p = v_1\to \cdots \to v_m$  denotes a path composed of arcs $v_1 \to v_2, \hdots, v_{m-1} \to v_m$.
+\item Let $w(p)$ denote the weight of the path, i.e. the weight of the arcs in the path
+\item If $P$ is a set of paths, and $v \in V$, then
+\[
+v \to P = \{v \to p: p \in P\}
+\]
+and
+\[
+P \to v = \{p \to v: p \in P\}
+\]
+\item If $v, w \in V$ and $S \subset V$, then
+\[ v \to S \to w = \{v \to s \to w: s \in S\}\]
+and
+\[
+v \to S^* \to w = \{v \to w\} \cup \{v \to s_1 \to w: s \in S\} \cup \{v \to s_1 \to s_2 \to w: s_1, s_2 \in S\} \cup \cdots
+\]
+\item If $P$ is a set of paths,
+\[
+w(P) = \min_{p \in P} w(p)
+\]
+\item If $v, w \in V$, and $S, U \subset V$, then
+\begin{align*}
+v \to (S \to U \to S)^* \to w &= \{v \to w\} \cup \{v \to s_1 \to u \to s_2 \to w\} \cup \cdots\\
+&= v \to (S \cup U)^* \to w
+\end{align*}
+\end{itemize}
 
-\bibliographystyle{abbrv}
-\bibliography{isomap}
+It follows that the APSP matrix $S$ has the property
+\[
+S_{ij} = w(i \to V^* \to j)
+\]
 
+\subsection{Proof}
+
+Let $V = V_1 \cup \cdots \cup V_\ell$ where $V_i = \{(b(i-1) + 1, \cdots, bi\}$.
+Let $W_i = \bigcup_{k=1}^i V_i$.
+Correctness follows if we can show that for $k = 1,\hdots, \ell$, we have
+\[
+S^{(k)}_{ij} = w(i \to W_k \to j)
+\]
+Fix $\ell$. We proceed by finite induction on $k$.
+
+\emph{Base case.}
+
+We will show the case $k = 1$.
+From the A-step, we have for $a, b \in V_1$
+\[
+S^{11(1)}_{ab} = w(a \to V_1^* \to b)
+\]
+Therefore, from the B-step, we have for $a \in V_1$, $b \in V_i$
+\[
+S^{1i(1)}_{ab} = w(a \to V_1^* \to b) 
+\]
+\[
+S^{i1(1)}_{ba} = w(b \to V_1^* \to a) 
+\]
+Then from the C-step, we have for $a \in V_i$, $b \in V_j$ that
+\[
+S^{ij(1)}_{ab} = w(a \to V_1^* \to b)
+\]
+Of course $W_1 = V_1$ so the base case is established.
+
+\emph{Induction.}
+
+Assume
+\[
+S^{(k-1)}_{ab} = w(a \to W_{k-1}^* \to b)
+\]
+Then in the $k$th iteration, from the A-step we have
+\[
+S^{kk(k)}_{ab} = w(a \to (W_{k-1}^* \to V_k^* \to W_{w-1}^*)^* \to b) = w(a \to W_k^* \to b)
+\]
+From the B-step we have
+\begin{align*}
+S^{ik(k)}_{ab} &= w((a \to W_{k-1}^* \to b) \cup (a \to W_k^* \to V_k \to W_{k-1}^* \to b))\\
+&= w(a \to W_k^* \to b)
+\end{align*}
+and similarly
+\[
+S^{ki(k)}_{ab} = w(a \to W_k^* \to b)
+\]
+Therefore in the C-step
+\begin{align*}
+S^{ij(k)}_{ab} &= w((a \to W_{k-1}^* \to b) \cup (a \to W_k^* \to V_k \to W_k^* \to b))\\
+&= w(a \to W_k^* \to b)
+\end{align*}
+Hence we have shown
+\[
+S^{(k)}_{ab} = w(a \to W_k^* \to b)
+\]
+as needed.
+
+\section{References}
+\begin{itemize}
+\item Zaharia, M., \& Chowdhury, M. (2010). Spark: cluster computing with working sets.
+\item Kumar, V., \& Singh, V. (1991). Scalability of parallel algorithms for the all-pairs shortest-path problem. Journal of Parallel and Distributed Computing, 13(2), 124–138. doi:10.1016/0743-7315(91)90083-L
+\item Solomonik, E., Buluc, A., \& Demmel, J. (2013). Minimizing communication in all-pairs shortest paths. Proceedings - IEEE 27th International Parallel and Distributed Processing Symposium, IPDPS 2013, 548–559. doi:10.1109/IPDPS.2013.111
+\end{itemize}
 
 
 \end{document}
