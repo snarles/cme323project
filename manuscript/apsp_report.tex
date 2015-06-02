@@ -252,9 +252,30 @@ of the bandwidth per step.
 
 \section{Background}
 
+The fastest known single-core algorithm for APSP is the Floyd-Warshall (FW)
+algorithm which takes $O(n^3)$ operations.  The $k$th iteration can be
+expressed in matrix notation as
+\[
+S^{(k)} \leftarrow \min(S^{(k-1)}, S^{(k-1)}_{\cdot k} \otimes S^{(k-1)}_{k \cdot})
+\]
+Hence FW can be parallelized given a parallel algorithm for min-plus
+multiplication, as Kumar and Singh proposed in 1991 using Cannon's
+algorithm.  However, since FW takes $n$ sequential updates, its speed
+is limited for GPU computing and distributed computing.  Buduc et
+al. (2010) proposed using a recursive formulation of APSP, known as
+the Divide-and-Conquer algorithm, to formulate a block-based recursive
+algorithm for APSP.  Solomonik et al. (2013) extended Buduc's
+recursive approach to the distributed setting and analyzed the
+communication cost.
+
+Both approaches by Buduc and Solomonik involve recursive algorithms
+which are difficult to implement in Spark.  We therefore propose a
+\emph{non-recursive} algorithm for APSP which can be considered a
+block-based generalization of the original Floyd-Warshall algorithm.
+
 \section{Complexity Analysis}
 
-In each step we give the \emph{computational cost} (computation done
+For each step of the algorithm (A, B, C) we give the \emph{computational cost} (computation done
 on each worker), the \emph{bandwidth} (number of words sent) and the
 total \emph{runtime} of the entire step.  Here we define runtime as
 the time between the start of the algorithm and its termination as
@@ -598,6 +619,7 @@ as needed.
 
 \section{References}
 \begin{itemize}
+\item Buluc, Aydın, John R. Gilbert, and Ceren Budak. "Solving path problems on the GPU." Parallel Computing 36.5 (2010): 241-253.
 \item Zaharia, M., \& Chowdhury, M. (2010). Spark: cluster computing with working sets.
 \item Kumar, V., \& Singh, V. (1991). Scalability of parallel algorithms for the all-pairs shortest-path problem. Journal of Parallel and Distributed Computing, 13(2), 124–138. doi:10.1016/0743-7315(91)90083-L
 \item Solomonik, E., Buluc, A., \& Demmel, J. (2013). Minimizing communication in all-pairs shortest paths. Proceedings - IEEE 27th International Parallel and Distributed Processing Symposium, IPDPS 2013, 548–559. doi:10.1109/IPDPS.2013.111
