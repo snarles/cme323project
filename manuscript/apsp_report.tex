@@ -221,7 +221,7 @@ Floyd-Warshall therefore has a total runtime of $O(n^3/p)$, in the
 asymptotic regime $n \to \infty$ and $p = O(n)$.  Our algorithm
 achieves the same asymptotic runtime of
 \[
-O\left(\frac{n^3}{p} + \frac{n}{b} + \right)
+O\left(\frac{n^3}{p} + \frac{n^2b}{\sqrt{p}} + n^2 + nb^2 + nb\log(p)\right)
 \]
 for details see section 3.
 
@@ -254,11 +254,17 @@ of the bandwidth per step.
 
 In each step we give the \emph{computational cost} (computation done
 on each worker), the \emph{bandwidth} (number of words sent) and the
-total \emph{runtime} of the entire step.  Here we measure
-computational cost as runtime on a single machine, as distinguished
-from the distributed runtime as the time between the start of the
-algorithm and its termination as measured by an absolute clock.  We
-give a non-asymptotic analysis given the following assumptions:
+total \emph{runtime} of the entire step.  Here we define runtime as
+the time between the start of the algorithm and its termination as
+measured by an absolute clock. As such, the runtime incorporates both
+the time spent communcating and the time spent computing.  To model
+communication times, we first consider a \emph{latency-free} analysis
+which assumes a zero-latency network.  Finally we give an analysis
+adjusting for latency.
+
+All of our analysis is non-asymptotic.  As such, we make the following
+assumptions on the computational costs and runtimes of atomic
+operations:
 
 \begin{enumerate}
 \item The time it takes to run Floyd-Warshall on a local matrix of size $b \times b$ is given by $\kappa_F b^3$
@@ -270,33 +276,15 @@ give a non-asymptotic analysis given the following assumptions:
   sending messages and receiving messages is not included in the
   computational cost.
 \item Time taken to send one message consisting of $m$ words from one
-  machine (whether a worker or driver) to another machine is
-\[
-T(m) = \kappa_L + \kappa_T m
-\]
-where $\kappa_L$ is a latency constant describing the time it takes
-for data to travel through the network and $\kappa_T$ is the
-transmission time per word.
-\item Time taken to \emph{broadcast} $m$ words from the driver to $p$ workers is given by
+  machine (whether a worker or driver) to another machine is $\kappa_T m$,
+where $\kappa_T$ describes the rate of transmission
+\item Time taken to \emph{broadcast} $m$ words from the driver to all workers is given by
 \[
 B(m, p) = \log(p) T(m)
 \]
 due to the usage of bittorrent broadcast.
-\item Each machine has a probability $\epsilon$ of instantaneously
-  failing.  The machine is instantly replaced, but all data in memory
-  and disk is lost.
-\item Let the time it takes to write to disk be given by $r\kappa_C
-  m$, where $\kappa_C$ is a constant for the disk write time and $m$
-  is the amount of data each worker has to write.  This is assuming
-  the data is already on disk.
-\item Assume no time cost for deleting data from disk.
-\item We assume that the initial data $A$ is stored on fault-tolerant
-  backup, otherwise there is no guarantee that the job can complete.
-  We assume a cost of $\kappa_B n^2$ to restore the cluster to the
-  initial state from backup.
+\item We give a worst-case analysis for simultaneous transmission.
 \end{enumerate}
-
-
 
 Note in particular that assumption 4 assumes a \emph{uniform} network
 topology so the transmission rate from any worker to any other worker
@@ -304,25 +292,9 @@ is equal.  This is in contrast to the \emph{grid} or \emph{hypercube}
 topologies considered in most of the existing literature on
 distributed APSP.
 
-Assumptions 6-9 deal with fault tolerance.  In the following we will
-start by giving an analysis of \emph{fault-free iterations}, and then
-as we analyze the global cost, we incorporate the extra cost from
-faulty iterations.
-
-We do not account for random variation in the time taken to transmit
-messages.  This is a potentially significant source of additional
-runtime in practical applications, but we are unaware of an accepted
-stochastic model of variation in transmission time, so we leave the
-modelling to future work.  We also note that a rough approximation for
-the effect of variation in transmission time can be obtained by simply
-increasing the machine failure probability $\epsilon$, since both
-effects have a similar dependence on the logarithm of the number of
-workers.  Of course, it should be kept in mind that the analysis with
-the adjusted $\epsilon$ should only be used to compute runtime and not
-to optimize the frequency of checkpointing.  Since checkpointing does
-not allieviate delays due to variation in transmission time, one
-should optimize checkpointing using the original $\epsilon$
-representing machine failure rate.
+Note that we do not account for random variation in the time taken to
+transmit messages, which is a potentially significant source of
+additional runtime in practical application.
 
 \subsection{A-step}
 
@@ -346,20 +318,16 @@ Exactly $b^2$ words are transmitted.
 
 \emph{Runtime.}
 The runtime consists of the time taken to transmit $S^{kk}$ and the time to compute $\text{APSP}S^{kk}$.
-The transmission time is
-\[
-\kappa_L + \kappa_T b^2
-\]
 Therefore the total runtime is
 \[
-\kappa_L + \kappa_T b^2 + \kappa_F b^3
+\kappa_T b^2 + \kappa_F b^3
 \]
 
 \subsection{B-step}
 In the $k$th iteration, the B-step is written in shorthand as
  $S^{kj(k)} \leftarrow \min(S^{kj(k-1)}, S^{kk(k)} \otimes S^{kj(k-1)})$ 
 and 
-
+$S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kk(k)})$
  in parallel.
 This is accomplished by the following:
 \begin{enumerate}
@@ -372,9 +340,9 @@ This is accomplished by the following:
   workers storing blocks in {\tt rows} and another $\sqrt{p}$ workers
   storing blocks in {\tt columns}.
 \item Invoke {\tt mapValues} on {\tt rows} to perform the update
-  $S^{kj(k)} \leftarrow S^{kk(k)} \otimes S^{kj(k-1)}$ and similarly
-  on {\tt cols} to perform the update $S^{ik(k)} \leftarrow S^{ik(k)}
-  \otimes S^{kk(k)}$
+  $S^{kj(k)} \leftarrow \min(S^{kj(k)}, S^{kk(k)} \otimes S^{kj(k-1)})$ and similarly
+  on {\tt cols} to perform the update $S^{ik(k)} \leftarrow \min(S^{ik(k)}, S^{ik(k)}
+  \otimes S^{kk(k)})$
 \end{enumerate}
 
 \emph{Computation.}  Only the workers holding values in {\tt rows} or
@@ -390,8 +358,9 @@ bandwidth is $2\sqrt{p}b^2$
 
 \emph{Runtime.} The runtime cost of the broadcast is
 \[
-\log(2\sqrt{p})(\kappa_L + \kappa_T b^2)
+\log(p)(\kappa_T b^2)
 \]
+due to bittorrent broadcast.
 The runtime cost of computation is
 \[
 \kappa_M \frac{b^2 n}{\sqrt{p}}
@@ -399,7 +368,7 @@ The runtime cost of computation is
 since each worker computes in parallel.
 Hence the total runtime is
 \[
-\log(2\sqrt{p})(\kappa_L + \kappa_T b^2) + \kappa_M \frac{b^2 n}{\sqrt{p}}
+\log(p)\kappa_T b^2 + \kappa_M \frac{b^2 n}{\sqrt{p}}
 \]
 
 \subsection{C-step}
@@ -442,7 +411,7 @@ The total computational cost is $\kappa_M n^2b$.
 bandwidth.  Creation of {\tt temp} and $S^{(k)}$ do not require
 bandwidth because of the map-side join.  Each block in {\tt rows} and
 {\tt cols} must be sent to $\sqrt{p}$ workers.
-Hence the bandwidth cost is $2 b^2 \sqrt{p}$.
+Hence the bandwidth cost is $2 n b \sqrt{p}$.
 
 \emph{Runtime.}  Creation of {\tt dupRows} requires each worker
 holding values in {\tt rows} to transmit a message of size
@@ -450,24 +419,20 @@ $\frac{nb}{\sqrt{p}}$ to $\sqrt{p}$ other workers.  This must be done
 sequentially under the current version of Spark (1.3.1) and hence
 takes time
 \[
-\frac{p^2}{2} \kappa_L  + \sqrt{p}\left(\kappa_T \frac{nb}{\sqrt{p}}\right) = p\kappa_L + \kappa_T nb
+\kappa_T nb
 \]
-the term $\frac{p^2}{2} \kappa_L$ is the latency cost per worker of an all-to-all communcation,
-since each pair of workers must communicate in order to organize the data transmission.
-
-The same can be said for {\tt dupCols}.
-
-Creation of {\tt temp} requires another pair of joins (but no other communication)
-and hence requires latency $\kappa_L p$.
-
-In total, the runtime due to communcation-related issues is
+In practice, the RDD {\tt dupRows} may be realized simultaneously.
+However, since we do not analyze scheduling, we make the simplifying
+assumtion that {\tt dupRows} is created after {\tt dupCols} is
+realized.
+Therefore, the runtime due to communcation-related issues is
 \[
-2\kappa_T nb + 2p\kappa_L
+2\kappa_T nb
 \]
 
 Adding the computation per worker, the total runtime is
 \[
-2\kappa_T nb + 2p\kappa_L + \kappa_M \frac{n^2b}{p}
+2\kappa_T nb + \kappa_M \frac{n^2b}{p}
 \]
 
 
