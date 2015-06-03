@@ -8,7 +8,7 @@
 \usepackage{ifthen}
 \usepackage{color}
 \usepackage{fancyhdr}
-\usepackage{graphicx}
+\usepackage{graphicx, subcaption}
 \usepackage{algorithm}
 \usepackage{algpseudocode}
 \usepackage{mdframed}
@@ -22,7 +22,7 @@
 
 
 \author{
-Charles Y.~Zheng and Jinshu Wang\\
+Charles Y.~Zheng and Jingshu Wang\\
 Department of Statistics\\
 Stanford University\\
 Stanford, CA 94305 \\
@@ -32,7 +32,7 @@ Stanford, CA 94305 \\
 Department of Computer Science\\
 Stanford University\\
 Stanford, CA 94305 \\
-\texttt{arzavj@stanford.edu} \\
+\texttt{arzavj@cs.stanford.edu} \\
 }
 
 % The \author macro works with any number of authors. There are two commands
@@ -79,7 +79,7 @@ Distributed Floyd-Warshall.
 
 \section{Summary}
 
-For the convenience of the grader we present an overview of our
+For the convenience of the reader we present an overview of our
 approach and our results.  The rest of the paper gives a detailed
 explanation of the results in this section.
 
@@ -133,7 +133,7 @@ S^{\ell 1} & S^{\ell 2} & \cdots & S^{\ell \ell}
 
 \subsection{Scaling}
 
-We consider the scaling $n$ possibly larger than the memory per
+We consider scaling $n$ possibly larger than the memory per
 worker.  We do \emph{not} assume a sparse graph $G$, so the number of
 edges can scale as $E \sim n^2$.
 
@@ -141,6 +141,7 @@ Let $p$ be the number of workers.  We assume the memory of each worker
 is fixed.  Therefore $b$ must be constant since we assume each block
 must fit in memory, and $p$ must increase as $n$ increases.
 
+Note that our analysis is split into two components: a \emph{latency-free} analysis and a \emph{latency-added analysis}.  The latency-free analysis is \emph{non-asymptotic}, while the latency-added analysis is asymptotic in $p$.
 
 \subsection{Notation}
 
@@ -152,7 +153,7 @@ C_{ij} = \min(A_{ij}, B_{ij})
 Meanwhile, given an $n \times k$ matrix $A$ and a $k \times m$ matrix $B$, define
 the \emph{min-plus} product $C = A \otimes B$ by
 \[
-C_{i,j} = \min_{l = 1}^k A_{il} + B_{lj}
+C_{ij} = \min_{l = 1}^k A_{il} + B_{lj}
 \]
 for $i = 1,\hdots, n$ and $j = 1,\hdots, m$.
 
@@ -175,7 +176,7 @@ explicitly specifying the Spark operations used in each step or what
 data needs to be communicated at each step.  In the analysis, we
 expand each step to describe the specific Spark operations needed,
 including the broadcasts, joins, etc. needed to transfer the necessary
-data across workers.  Do note that $S^{(0)}, S^{(1)},\hdots,
+data across workers.  Note that $S^{(0)}, S^{(1)},\hdots,
 S^{(\ell)}$ refer to the sequence of {\tt BlockMatrix} objects storing
 the results of each iteration.
 
@@ -193,13 +194,13 @@ the results of each iteration.
         \State $S^{kj(k)} \leftarrow \min(S^{kj(k-1)}, S^{kk(k)} \otimes S^{kj(k-1)})$ 
       \EndIf
       \If{$i \neq k$ and $j = k$}
-        \State $S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kk(k)})$
+        \State $S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k-1)} \otimes S^{kk(k)})$
       \EndIf
     \EndFor
     \State [C-step]
     \For{$i = 1,\hdots, \ell,\ j = 1,\hdots, \ell$} \emph{in parallel}
       \If{$i \neq k$ and $j \neq k$}
-        \State $S^{ij(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kj(k)})$
+        \State $S^{ij(k)} \leftarrow \min(S^{ij(k-1)}, S^{ik(k)} \otimes S^{kj(k)})$
       \EndIf
     \EndFor
     \State [D-step]
@@ -227,7 +228,7 @@ O\left(\frac{n^3}{p} + \frac{n^2b}{\sqrt{p}} + n^2 + nb^2 + nb\log(p)\right)
 for details see section 3.
 
 One can also consider the \emph{communication cost} scaling in terms
-of the amount of data tranferred over the network.  The paper by
+of the amount of data transferred over the network.  The paper by
 Solomonik et al. (2013) derived a theoretical lower bound on the
 communication cost of APSP as $\Omega(\frac{n^2}{p^{2/3}})$ words.  In
 comparison, our algorithm communicates a total of $O(n^2\sqrt{p} +
@@ -244,7 +245,7 @@ worker to the driver, involving a bandwidth of $O(b^2)$ words.  The
 B-step involves a one-to-all broadcast of a matrix of size $b\times b$
 from the driver to $p$ workers, hence a bandwidth of $O(b^2 p)$ words.
 The C-step involves an all-to-all communication (a map-side join)
-where each worker recieves two $n/\sqrt{p} \times b$ matrices, and
+where each worker receives two $\frac{n}{\sqrt{p}} \times b$ matrices, and
 therefore entails a bandwidth of $O(nb\sqrt{p})$.  Therefore the
 per-iteration bandwidth is $O(pb^2 + nb\sqrt{p})$.
 There are $n/b$ iterations, so the total bandwidth for the algorithm
@@ -253,6 +254,10 @@ derivation of the bandwidth per step.
 
 \subsection{Summary of Results}
 
+We implement the non-recursive block APSP in Apache Spark.
+Running the algorithm in the local configuration with 4 cores, we see a U-shaped (initially decreasing, then increasing) dependence relationship between block size and wall-clock runtime as predicted by our analysis.
+In medium-sized problems, choosing the correct block size can improve the runtime by a factor of 50 or more.
+For example, for a matrix $n = 1000$, we have an average wall-clock runtime of 728.4s given a suboptimal block size $b = 2$, compared to a runtime of 16.6s given the optimal block size $b = 250$.
 For details see Section 5.
 
 \section{Background}
@@ -261,7 +266,7 @@ The fastest known single-core algorithm for APSP is the Floyd-Warshall (FW)
 algorithm which takes $O(n^3)$ operations.  The $k$th iteration can be
 expressed in matrix notation as
 \[
-S^{(k)} \leftarrow \min(S^{(k-1)}, S^{(k-1)}_{\cdot k} \otimes S^{(k-1)}_{k \cdot})
+S^{(k)} \leftarrow \min(S^{(k-1)}, S^{(k-1)}_{\cdot, k} \otimes S^{(k-1)}_{k, \cdot})
 \]
 Hence FW can be parallelized given a parallel algorithm for min-plus
 multiplication, as Kumar and Singh proposed in 1991 using Cannon's
@@ -282,10 +287,10 @@ block-based generalization of the original Floyd-Warshall algorithm.
 
 For each step of the algorithm (A, B, C) we give the \emph{computational cost} (computation done
 on each worker), the \emph{bandwidth} (number of words sent) and the
-total \emph{runtime} of the entire step.  Here we define runtime as
+total \emph{wall-clock runtime} of the entire step.  Here we define wall-clock runtime as
 the time between the start of the algorithm and its termination as
 measured by an absolute clock. As such, the runtime incorporates both
-the time spent communcating and the time spent computing.  To model
+the time spent communicating and the time spent computing.  To model
 communication times, we first consider a \emph{latency-free} analysis
 which assumes a zero-latency network.  Finally we give an analysis
 adjusting for latency.
@@ -298,8 +303,8 @@ operations:
 \item The time it takes to run Floyd-Warshall on a local matrix of size $b \times b$ is given by $\kappa_F b^3$
 \item The time it takes to locally perform min-plus multiplication on
   matrices of size $a \times b$ and $b \times c$ be given by $\kappa_M
-  ab^2c$. The time to update $C \leftarrow \min(C, A \otimes B)$ is the
-  same as the time to compute $A \otimes B$ since $C$ can be modifed in-place.
+  abc$. The time to update $C \leftarrow \min(C, A \otimes B)$ is the
+  same as the time to compute $A \otimes B$ since $C$ can be modified in-place during the min-plus product.
 \item Separate the cost of communication and computation, so that
   sending messages and receiving messages is not included in the
   computational cost.
@@ -314,6 +319,19 @@ due to the usage of bittorrent broadcast.
 \item Costs of checkpointing are considered in the latency-added analysis
 \end{enumerate}
 
+\begin{figure}[h]
+\caption{The Block APSP-algorithm in Spark.
+A-step. Diagonal block $S^{kk}$ sent to driver.
+B-step. Row and columns blocks $S^{ik}$ and $S^{kj}$ updated.
+C-step. All other blocks $S^{ij}$ updated.}
+\begin{tabular}{ccc}
+\includegraphics[scale = 0.3, trim = 0in -0.55in 0in 0in, clip]{blockApsp-2.png} &
+\includegraphics[scale = 0.3]{blockApsp-3.png} &
+\includegraphics[scale = 0.3, trim = 0in -0.55in 0in 0in, clip]{blockApsp-4.png}\\
+A-step & B-step & C-step
+\end{tabular}
+\end{figure}
+
 
 \subsection{A-step}
 
@@ -321,7 +339,6 @@ In the $k$th iteration, the A-step is written in shorthand as
 $S^{kk(k)} \leftarrow \text{APSP}(S^{kk(k-1)})$.  In fact, the updated
 {\tt BlockMatrix} $S^{(k)}$ is not formed until the end of the C-step,
 and in the A-step $S^{kk(k)}$ only exists on the driver.
-$S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kk(k)})$
 The detailed A-step is as follows:
 \begin{enumerate}
 \item The block $S^{kk(k-1)}$ is copied to the driver via invoking the {\tt lookup} method with key $(k, k)$ on the {\tt  BlockMatrix} $S^{(k-1)}$
@@ -346,28 +363,28 @@ Therefore the total runtime is
 In the $k$th iteration, the B-step is written in shorthand as
  $S^{kj(k)} \leftarrow \min(S^{kj(k-1)}, S^{kk(k)} \otimes S^{kj(k-1)})$ 
 and 
-$S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kk(k)})$
+$S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k-1)} \otimes S^{kk(k)})$
  in parallel.
 This is accomplished by the following:
 \begin{enumerate}
 \item Form the RDD {\tt rows} and the RDD {\tt columns} by invoking
   the {\tt filter} method on $S^{(k-1)}$ to keep only the blocks
-  $S^{ik(k)}$ and $S^{kj(k)}$ for $i = 1,\hdots, \ell$ and $j =
+  $S^{ik(k-1)}$ and $S^{kj(k-1)}$ for $i = 1,\hdots, \ell$ and $j =
   1,\hdots, \ell$.
 \item Broadcast $S^{kk(k)}$ from the driver to each worker holding a
   block in {\tt rows} or {\tt columns}.  There should be $\sqrt{p}$
   workers storing blocks in {\tt rows} and another $\sqrt{p}$ workers
   storing blocks in {\tt columns}.
 \item Invoke {\tt mapValues} on {\tt rows} to perform the update
-  $S^{kj(k)} \leftarrow \min(S^{kj(k)}, S^{kk(k)} \otimes S^{kj(k-1)})$ and similarly
-  on {\tt cols} to perform the update $S^{ik(k)} \leftarrow \min(S^{ik(k)}, S^{ik(k)}
+  $S^{kj(k)} \leftarrow \min(S^{kj(k-1)}, S^{kk(k)} \otimes S^{kj(k-1)})$ and similarly
+  on {\tt cols} to perform the update $S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k-1)}
   \otimes S^{kk(k)})$
 \end{enumerate}
 
 \emph{Computation.}  Only the workers holding values in {\tt rows} or
      {\tt columns} perform computation, when {\tt mapValues} is
      invoked.  Each of those workers holds $\frac{n}{\sqrt{p}b}$
-     blocks.  The update for each block entails a matrix multiply
+     blocks.  The update for each block entails a matrix multiplication
      costing $\kappa_M b^3$, so the cost per worker is $\kappa_m
      \frac{nb^2}{\sqrt{p}}$, and the total cost is $2\kappa_M b^2 n$.
 
@@ -392,7 +409,7 @@ Hence the total runtime is
 
 \subsection{C-step}
 
-In shorthand, the C-step is written as $S^{ij(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kj(k)})$.
+In shorthand, the C-step is written as $S^{ij(k)} \leftarrow \min(S^{ij(k-1)}, S^{ik(k)} \otimes S^{kj(k)})$.
 Here it becomes important to note the partitioner used for the various RDDs.
 We assume that the same partitioner is used for all $S^{(0)}, \hdots, S^{(\ell)}$
 and for the RDDs {\tt dupRows}, {\tt dupCols}, and {\tt temp} to be defined in the following.
@@ -409,7 +426,7 @@ to the key-value pairs
 \item Create RDD {\tt dupCols} in an analogous way
 \item Create RDD {\tt temp} by joining {\tt dupCols}, {\tt dupRows},
   and $S^{(k-1)}$.  The order of joining does not matter.
-\item Create {\tt Blockmatrix} $S^{(k)}$ by invoking {\tt mapValues}
+\item Create {\tt BlockMatrix} $S^{(k)}$ by invoking {\tt mapValues}
   to {\tt temp}.  The $(i, j)$ entry of {\tt temp} contains the blocks
   $S^{ij(k-1)}, S^{ik(k)}, S^{kj(k)}$ produced in the A-step and
   B-step.  The effect of {\tt mapValues} is to produce
@@ -442,9 +459,9 @@ takes time
 \]
 In practice, the RDD {\tt dupRows} may be realized simultaneously.
 However, since we do not analyze scheduling, we make the simplifying
-assumtion that {\tt dupRows} is created after {\tt dupCols} is
+assumption that {\tt dupRows} is created after {\tt dupCols} is
 realized.
-Therefore, the runtime due to communcation-related issues is
+Therefore, the runtime due to communication-related issues is
 \[
 2\kappa_T nb
 \]
@@ -491,7 +508,7 @@ We assume the following model for latency:
   recipient.  After contact is made, data is transferred at the rate
   $\frac{1}{\kappa_T}$.
 \item The lags $T$ are independent and identically distributed.
-For iid lags $T_i$ we have
+For i.i.d. lags $T_i$ we have
 \[
 \text{E} \sup_{i=1}^p T_i = \kappa_L \log p
 \]
@@ -507,7 +524,7 @@ lag and all-to-all communications incur $p \kappa_L \log(p)$ additional
 runtime due to lag.
 
 Given that the algorithm involves one one-to-one communication, one
-one-to-all communcation, four all-to-all communications, and $1/q$
+one-to-all communication, four all-to-all communications, and $1/q$
 checkpointing operations per iteration, the added runtime from latency
 and checkpointing is
 \[
@@ -562,35 +579,59 @@ It follows that the APSP matrix $S$ has the property
 S_{ij} = w(i \to V^* \to j)
 \]
 
+\subsection{Shortest paths and min-plus multiplication}
+
+We review some basic principles linking shortest-path computations and min-plus multiplication which we will use in the proof.
+
+Let $G$ be a graph with vertices $V = V_1 \cup V_2 \cup V_3$.
+Let $H$ denote a matrix with $H_{ij} = w(i \to j)$ for $i \in V_1, j \in V_2$.
+Let $I$ denote a matrix with $I_{jk} = w(j \to k)$ for $j \in V_2, k \in V_3$.
+Then it follows that if $M = H \otimes I$,
+\[
+M_{ik} = w(i \to V_2 \to k)
+\]
+for $i \in V_1$ and $k \in V_3$.
+Furthermore, suppose $L$ is a matrix with $L_{ik} = w(i \to k)$ for $i \in V_1$ and $k \in V_3$.
+Then
+\[
+(\min(M, L))_{ik} = w((i \to k) \cup (i \to V_2 \to k))
+\]
+for $i \in V_1$ and $k \in V_3$.
+
+Let $A$ be the adjacency matrix of $G$.
+Define $A^2 = A \otimes A$ and $A^k = A^{k-1} \otimes A$.
+We have
+\[
+(A^2)_{ij} = w(i \to V \to j)
+\]
+Note that a path $i \to i \to j$ or $i \to j \to j$ collapses to $i \to j$
+since $A_{ii} = A_{jj} = 0$.
+Also note that $\text{APSP}(A) = A^\infty$.
+Therefore
+\[
+(\text{APSP}(A))_{ij} = (A^\infty)_{ij} = w(i \to V^* \to j)
+\]
+
+
 \subsection{Proof}
 
 Let $V = V_1 \cup \cdots \cup V_\ell$ where $V_i = \{(b(i-1) + 1, \cdots, bi\}$.
-Let $W_i = \bigcup_{k=1}^i V_i$.
-Correctness follows if we can show that for $k = 1,\hdots, \ell$, we have
+Let $W_i = \bigcup_{k=1}^i V_i$, where $W_0 = \emptyset$.
+Correctness follows if we can show that for $k = 0,\hdots, \ell$, we have
 \[
-S^{(k)}_{ij} = w(i \to W_k \to j)
+S^{(k)}_{ij} = w(i \to W_k^* \to j)
 \]
 Fix $\ell$. We proceed by finite induction on $k$.
 
 \emph{Base case.}
 
-We will show the case $k = 1$.
-From the A-step, we have for $a, b \in V_1$
+Recall that $S^{(0)} = A$.
+Then
 \[
-S^{11(1)}_{ab} = w(a \to V_1^* \to b)
+S^{(0)}_{ij} = A_{ij} = w(i \to j) = w(i \to \emptyset^* \to j)
 \]
-Therefore, from the B-step, we have for $a \in V_1$, $b \in V_i$
-\[
-S^{1i(1)}_{ab} = w(a \to V_1^* \to b) 
-\]
-\[
-S^{i1(1)}_{ba} = w(b \to V_1^* \to a) 
-\]
-Then from the C-step, we have for $a \in V_i$, $b \in V_j$ that
-\[
-S^{ij(1)}_{ab} = w(a \to V_1^* \to b)
-\]
-Of course $W_1 = V_1$ so the base case is established.
+so the base case $k=0$ is established.
+
 
 \emph{Induction.}
 
@@ -598,11 +639,17 @@ Assume
 \[
 S^{(k-1)}_{ab} = w(a \to W_{k-1}^* \to b)
 \]
-Then in the $k$th iteration, from the A-step we have
+Then in the $k$th iteration, the A-step computes
+$S^{kk(k)} \leftarrow \text{APSP}(S^{kk(k-1)})$.
+Thus we have
 \[
-S^{kk(k)}_{ab} = w(a \to (W_{k-1}^* \to V_k^* \to W_{w-1}^*)^* \to b) = w(a \to W_k^* \to b)
+S^{kk(k)}_{ab} = w(a \to (W_{k-1}^* \to V_k^* \to W_{k-1}^*)^* \to b) = w(a \to W_k^* \to b)
 \]
 From the B-step we have
+ $S^{kj(k)} \leftarrow \min(S^{kj(k-1)}, S^{kk(k)} \otimes S^{kj(k-1)})$ 
+and 
+$S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kk(k)})$.
+Therefore,
 \begin{align*}
 S^{ik(k)}_{ab} &= w((a \to W_{k-1}^* \to b) \cup (a \to W_k^* \to V_k \to W_{k-1}^* \to b))\\
 &= w(a \to W_k^* \to b)
@@ -611,7 +658,9 @@ and similarly
 \[
 S^{ki(k)}_{ab} = w(a \to W_k^* \to b)
 \]
-Therefore in the C-step
+Therefore in the C-step, which computes
+$S^{ij(k)} \leftarrow \min(S^{ij(k-1)}, S^{ik(k)} \otimes S^{kj(k)})$,
+we have
 \begin{align*}
 S^{ij(k)}_{ab} &= w((a \to W_{k-1}^* \to b) \cup (a \to W_k^* \to V_k \to W_k^* \to b))\\
 &= w(a \to W_k^* \to b)
@@ -623,6 +672,42 @@ S^{(k)}_{ab} = w(a \to W_k^* \to b)
 as needed.
 
 \section{Results}
+To implement the algorithm in Spark, we take use of
+the BlockMatrix class in Mllib. The two main operations
+in our algorithm: $\min(A, B)$ and $A \otimes B$ of matrices
+$A$ and $B$ are analogous to the ``add'' and ``multiply''
+operations of matrices. Thus, we also use the Grid Partitioner defined in the BlockMatrix class to avoid 
+unnecessary shuffling of data in these operations.
+As how people build the BlockMatrix class, our local matrix operations $\min(A, B)$ and $A \otimes B$
+are also done via the breeze matrix operations.
+
+The other technique we use is checkpointing. In each iteration, we are updating the whole $n \times n$ shortest paths matrix, which is stored as an RDD. Thus, we keep
+generating new RDDs depending on RDDs of previous iterations, which causes the length of the dependency chain to keep increasing with the number of iterations.
+By checkpointing, RDD can be saved to disk and the lineage of RDDs can be truncated. We checkpoint the RDDs
+every 20 iterations following Meng and Das (2014)'s comments. 
+
+We run the algorithm for $n = 500$ and $n = 1000$ 
+on a local computer with $4$ cores and $8$GB memories in 
+total. Thus, $p = 4$ which is also the total number of partitions. Figure \ref{fig:time-result} shows the total
+run time for different block sizes. The use of blocks reduces the run time of distributed Floyd-Warshall substantially. The optimal block size $b$ depends on the trade-off of reduced latency time and the extra computation time. In our experiment, for both $n = 500$
+and $n = 1000$, $b = 250$ performs the best among all the
+choices.
+
+\begin{figure}[ht]
+\centering
+\begin{subfigure}[b]{0.45\textwidth}
+\includegraphics[width = \textwidth]{time.pdf}
+\caption{n = 500}
+\end{subfigure}
+\begin{subfigure}[b]{0.45\textwidth}
+\includegraphics[width = \textwidth]{time1000.pdf}
+\caption{n = 1000}
+\end{subfigure}
+\caption{The total run time versus the block size: the total run time is in seconds. The error bars are the standard deviations of $5$ random runs.}
+\label{fig:time-result}
+\end{figure}
+
+The code is publicly available at {\tt https://github.com/arzavj/spark-all-pairs-shortest-path}.
 
 \section{References}
 \begin{itemize}
@@ -630,6 +715,9 @@ as needed.
 \item Zaharia, M., \& Chowdhury, M. (2010). Spark: cluster computing with working sets.
 \item Kumar, V., \& Singh, V. (1991). Scalability of parallel algorithms for the all-pairs shortest-path problem. Journal of Parallel and Distributed Computing, 13(2), 124–138. doi:10.1016/0743-7315(91)90083-L
 \item Solomonik, E., Buluc, A., \& Demmel, J. (2013). Minimizing communication in all-pairs shortest paths. Proceedings - IEEE 27th International Parallel and Distributed Processing Symposium, IPDPS 2013, 548–559. doi:10.1109/IPDPS.2013.111
+\item Meng, Xiangrui \& Das, Tathagata (2014). Re: java.lang.StackOverflowError when calling count(). Retrived from http://apache-spark-user-list.1001560.n3.nabble.com/java-lang-StackOverflowError-when-calling-count-td5649.html
+\item Jain, Arzav,. Wang, Jingshu., Zheng, Charles. spark-all-pairs-shortest-path. 
+{\tt https://github.com/arzavj/spark-all-pairs-shortest-path}
 \end{itemize}
 
 
