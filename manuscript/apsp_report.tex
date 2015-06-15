@@ -141,6 +141,8 @@ Let $p$ be the number of workers.  We assume the memory of each worker
 is fixed.  Therefore $b$ must be constant since we assume each block
 must fit in memory, and $p$ must increase as $n$ increases.
 
+Each worker holds $\frac{n}{\sqrt{p}} \times \frac{n}{\sqrt{p}}$ elements of $S$. Since $S$ is broken up into $b \times b$ blocks, each worker holds $\frac{n}{b\sqrt{p}} \times \frac{n}{b\sqrt{p}}$ blocks.
+
 Note that our analysis is split into two components: a \emph{latency-free} analysis and a \emph{latency-added analysis}.  The latency-free analysis is \emph{non-asymptotic}, while the latency-added analysis is asymptotic in $p$.
 
 \subsection{Notation}
@@ -374,7 +376,7 @@ This is accomplished by the following:
 \item Broadcast $S^{kk(k)}$ from the driver to each worker holding a
   block in {\tt rows} or {\tt columns}.  There should be $\sqrt{p}$
   workers storing blocks in {\tt rows} and another $\sqrt{p}$ workers
-  storing blocks in {\tt columns}.
+  storing blocks in {\tt columns}. However, Spark does not allow a selective broadcast, hence $S^{kk(k)}$ is broadcast to all workers.
 \item Invoke {\tt mapValues} on {\tt rows} to perform the update
   $S^{kj(k)} \leftarrow \min(S^{kj(k-1)}, S^{kk(k)} \otimes S^{kj(k-1)})$ and similarly
   on {\tt cols} to perform the update $S^{ik(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k-1)}
@@ -384,13 +386,13 @@ This is accomplished by the following:
 \emph{Computation.}  Only the workers holding values in {\tt rows} or
      {\tt columns} perform computation, when {\tt mapValues} is
      invoked.  Each of those workers holds $\frac{n}{\sqrt{p}b}$
-     blocks.  The update for each block entails a matrix multiplication
+     blocks to be updated.  The update for each block entails a matrix multiplication
      costing $\kappa_M b^3$, so the cost per worker is $\kappa_m
      \frac{nb^2}{\sqrt{p}}$, and the total cost is $2\kappa_M b^2 n$.
 
 \emph{Bandwidth.} The {\tt broadcast} step entails sending a $b \times
-b$ matrix from the driver to $2\sqrt{p}$ workers.  Therefore the
-bandwidth is $2\sqrt{p}b^2$
+b$ matrix from the driver to $p$ workers.  Therefore the
+bandwidth is $pb^2$.
 
 \emph{Runtime.} The runtime cost of the broadcast is
 \[
@@ -399,12 +401,12 @@ bandwidth is $2\sqrt{p}b^2$
 due to bittorrent broadcast.
 The runtime cost of computation is
 \[
-\kappa_M \frac{b^2 n}{\sqrt{p}}
+\kappa_M \frac{nb^2}{\sqrt{p}}
 \]
 since each worker computes in parallel.
 Hence the total runtime is
 \[
-\log(p)\kappa_T b^2 + \kappa_M \frac{b^2 n}{\sqrt{p}}
+\log(p)\kappa_T b^2 + \kappa_M \frac{nb^2}{\sqrt{p}}
 \]
 
 \subsection{C-step}
@@ -413,32 +415,34 @@ In shorthand, the C-step is written as $S^{ij(k)} \leftarrow \min(S^{ij(k-1)}, S
 Here it becomes important to note the partitioner used for the various RDDs.
 We assume that the same partitioner is used for all $S^{(0)}, \hdots, S^{(\ell)}$
 and for the RDDs {\tt dupRows}, {\tt dupCols}, and {\tt temp} to be defined in the following.
+The partitioner assigns each worker a key $(a, b)$ where $a = 1,\hdots, \sqrt{p}$ and $b = 1,\hdots, \sqrt{p}$.
+The worker $(a,b)$ holds blocks $S^{ij}$ for $i = (a-1)\frac{n}{\sqrt{p}} + 1,\hdots, a \frac{n}{\sqrt{p}}$ and $j = (b-1)\frac{n}{\sqrt{p}} + 1, \hdots, b\frac{n}{\sqrt{p}}$.
+Define $a(i), b(i)$ as the functions such that $S^{ij}$ belongs to the worker with key $(a(i), a(j))$ 
 
 \begin{enumerate}
 \item Create RDD {\tt dupRows} by invoking {\tt flatMap} on {\tt rows} to flatMap the key-value pair
 \[
-(i, j, S^{ij})
+(a(i), a(j), S^{ij})
 \]
 to the key-value pairs
 \[
-(1, j, S^{ij}), \hdots, (\ell, j, S^{ij})
+(1, a(j), S^{ij}), \hdots, (\sqrt{p}, a(j), S^{ij})
 \]
 \item Create RDD {\tt dupCols} in an analogous way
 \item Create RDD {\tt temp} by joining {\tt dupCols}, {\tt dupRows},
   and $S^{(k-1)}$.  The order of joining does not matter.
 \item Create {\tt BlockMatrix} $S^{(k)}$ by invoking {\tt mapValues}
-  to {\tt temp}.  The $(i, j)$ entry of {\tt temp} contains the blocks
+  to {\tt temp}.  The $(a(i), b(j))$ entry of {\tt temp} contains the blocks
   $S^{ij(k-1)}, S^{ik(k)}, S^{kj(k)}$ produced in the A-step and
   B-step.  The effect of {\tt mapValues} is to produce
 \[
 S^{ij(k)} \leftarrow \min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kj(k)})
 \]
-as $(i, j)$ block in $S^{(k)}$.
 \end{enumerate}
 
 \emph{Computation.}  The computation occurs when {\tt mapValues} is
 called.  There, each worker computes $S^{ij(k)} \leftarrow
-\min(S^{ik(k-1)}, S^{ik(k)} \otimes S^{kj(k)})$ for each of its
+\min(S^{ij(k-1)}, S^{ik(k)} \otimes S^{kj(k)})$ for each of its
 $n^2/(b^2 p)$ blocks.  The computation per block is $\kappa_M b^3$, and
 hence the computation per worker is $\kappa_M \frac{n^2b}{p}$.
 The total computational cost is $\kappa_M n^2b$.
@@ -492,13 +496,13 @@ We add up the costs derived for each step, and multiply by the number of iterati
 
 \subsection{Latency-Added Analysis}
 
-Here we \emph{uniform} network topology so the latency of transmission
+We assume a \emph{uniform} network topology so the latency of transmission
 is the same for every pair of workers.  This is in contrast to the
 \emph{grid} or \emph{hypercube} topologies considered in most of the
 existing literature on distributed APSP.
 
 Here we will consider large-$p$ asymptotics so that that analysis is
-not sensitive to the distribution of the lag, as long as has
+not sensitive to the distribution of the lag, as long as it has
 exponential tails.
 
 We assume the following model for latency:
@@ -672,26 +676,31 @@ S^{(k)}_{ab} = w(a \to W_k^* \to b)
 as needed.
 
 \section{Results}
-To implement the algorithm in Spark, we take use of
+To implement the algorithm in Spark, we make use of
 the BlockMatrix class in Mllib. The two main operations
 in our algorithm: $\min(A, B)$ and $A \otimes B$ of matrices
 $A$ and $B$ are analogous to the ``add'' and ``multiply''
 operations of matrices. Thus, we also use the Grid Partitioner defined in the BlockMatrix class to avoid 
 unnecessary shuffling of data in these operations.
-As how people build the BlockMatrix class, our local matrix operations $\min(A, B)$ and $A \otimes B$
-are also done via the breeze matrix operations.
+Similar to operations implemented in the BlockMatrix class, our local matrix operations $\min(A, B)$ and $A \otimes B$
+are done via the Breeze matrix operations.
 
-The other technique we use is checkpointing. In each iteration, we are updating the whole $n \times n$ shortest paths matrix, which is stored as an RDD. Thus, we keep
-generating new RDDs depending on RDDs of previous iterations, which causes the length of the dependency chain to keep increasing with the number of iterations.
-By checkpointing, RDD can be saved to disk and the lineage of RDDs can be truncated. We checkpoint the RDDs
-every 20 iterations following Meng and Das (2014)'s comments. 
+One other technique we use is checkpointing. In each iteration, we are updating the whole $n \times n$ shortest paths matrix $S$, which is stored as an RDD. Since RDDs are immutable, we thus keep
+generating new RDDs depending on the RDD of the previous iteration, which causes the length of the RDD lineage to keep increasing with the number of iterations.
+By periodically checkpointing and materializing the RDD using {\tt count()}, the data can be saved to disk and the lineage of RDDs can be truncated. We checkpoint the RDDs
+every 20 iterations following Meng and Das (2014)'s suggestions. 
 
 We run the algorithm for $n = 500$ and $n = 1000$ 
-on a local computer with $4$ cores and $8$GB memories in 
-total. Thus, $p = 4$ which is also the total number of partitions. Figure \ref{fig:time-result} shows the total
-run time for different block sizes. The use of blocks reduces the run time of distributed Floyd-Warshall substantially. The optimal block size $b$ depends on the trade-off of reduced latency time and the extra computation time. In our experiment, for both $n = 500$
+on a local computer with $4$ cores and $8$GB memory in 
+total. We thus pick $p = 4$ as the total number of partitions/workers. Figure \ref{fig:time-result} shows the total
+runtime for different block sizes. The use of blocks reduces the runtime of distributed Floyd-Warshall substantially. The optimal block size $b$ depends on the trade-off between reduced latency time and the extra computation time both due to fewer iterations $\ell = \frac{n}{b}$. In our experiment, for both $n = 500$
 and $n = 1000$, $b = 250$ performs the best among all the
 choices.
+
+However, we also observe that the latency time,
+which is the dominating time cost when the block size is small is not growing linearly in
+n as expected. We find out that the frequency of 
+checkpointing is also very influential to the performance, which has not been counted properly into our calculations of cost. Figure \ref{fig:time-result-cp} shows for $n = 1000$ and $b = 10$ how the checkpointing frequency influences the total run time. The result suggests that we may need to have check points more frequently than every $20$ iterations. Deciding the optimal checkpointing strategy is an open problem, and is beyond the scope of this report.
 
 \begin{figure}[ht]
 \centering
@@ -703,8 +712,17 @@ choices.
 \includegraphics[width = \textwidth]{time1000.pdf}
 \caption{n = 1000}
 \end{subfigure}
-\caption{The total run time versus the block size: the total run time is in seconds. The error bars are the standard deviations of $5$ random runs.}
+\caption{The total run time versus the block size. The total run time is in seconds. The error bars are the standard deviations of $5$ random runs.}
 \label{fig:time-result}
+\end{figure}
+
+\begin{figure}[ht]
+\centering
+\begin{subfigure}[b]{0.45\textwidth}
+\includegraphics[width = \textwidth]{timeCheckpoint.pdf}
+\end{subfigure}
+\caption{The total run time versus checkpointing intervals for $n = 1000, b = 10$. The total run time is in seconds. The error bars are the standard deviations of $5$ random runs.}
+\label{fig:time-result-cp}
 \end{figure}
 
 The code is publicly available at {\tt https://github.com/arzavj/spark-all-pairs-shortest-path}.
