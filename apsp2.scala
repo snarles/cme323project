@@ -1,5 +1,6 @@
-// [CHARLES] Interactive port of spark-all-pairs-shortest-path
-// [CHARLES] Mainly replaces GridPartitioner2
+// [CHARLES] Interactive port of spark-all-pairs-shortest-path for educational purposes
+// [CHARLES] Everything is single-core, one partition
+// [CHARLES] Removes use of GridPartitioner
 
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
@@ -71,6 +72,44 @@ val ColsPerBlock = m // function arg
 val entries = graph.edges.map { case edge => MatrixEntry(edge.srcId.toInt, edge.dstId.toInt, edge.attr) }
 val coordMat = new CoordinateMatrix(entries, n, n)
 val matA = coordMat.toBlockMatrix(RowsPerBlock, ColsPerBlock)
+require(matA.numColBlocks == matA.numRowBlocks)
+// make sure that all block indices appears in the matrix blocks
+// add the blocks that are not represented
+val activeBlocks: BDM[Int] = BDM.zeros[Int](matA.numRowBlocks, matA.numColBlocks)
+val activeIdx = matA.blocks.map { case ((i, j), v) => (i, j) }.collect()
+activeIdx.foreach { case (i, j) => activeBlocks(i, j) = 1 }
+val nAddedBlocks = matA.numRowBlocks * matA.numColBlocks - sum(activeBlocks)
+// recognize which blocks need to be added
+val addedBlocksIdx = Array.range(0, nAddedBlocks).map(i => (0, i))
+var index = 0
+for (i <- 0 until matA.numRowBlocks) {
+  for (j <- 0 until matA.numColBlocks) {
+    if (activeBlocks(i, j) == 0) {
+      addedBlocksIdx(index) = (i, j)
+      index = index + 1
+    }
+  }
+}
+// Create empty blocks with just the non-represented block indices
+val addedBlocks = sc.parallelize(addedBlocksIdx).map { case (i, j) => {
+  var nRows = matA.rowsPerBlock
+  var nCols = matA.colsPerBlock
+  if (i == matA.numRowBlocks - 1) nRows = matA.numRows().toInt - nRows * (matA.numRowBlocks - 1)
+  if (j == matA.numColBlocks - 1) nCols = matA.numCols().toInt - nCols * (matA.numColBlocks - 1)
+  val newMat: Matrix = new SparseMatrix(nRows, nCols, BDM.zeros[Int](1, nCols + 1).toArray,
+    Array[Int](), Array[Double]())
+  ((i, j), newMat)
+}
+}
+val initialBlocks = addedBlocks.union(matA.blocks) // [CHARLES] Removed partitionBy
+val blocks: RDD[((Int, Int), Matrix)] = initialBlocks.map { case ((i, j), v) => {
+  val converted = v match {
+    case dense: DenseMatrix => dense
+    case sparse: SparseMatrix => addInfinity(sparse, i, j)
+  }
+  ((i, j), converted)
+}
+}
 
 
 //val matA = generateInput(graph, n, sc, m, m)
