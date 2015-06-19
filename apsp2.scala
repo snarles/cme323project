@@ -278,7 +278,7 @@ val time1 : Long = System.currentTimeMillis
 val res = for (i <- 0 to (nlook - 1)) yield {
   val a = i % 2
   val b = (i/2) % 2
-  val temp = matA.blocks.filter(_._1 == (1, 1)).map( _._2.toArray(ids(i)) ).collect
+  val temp = matA.blocks.filter(_._1 == (a, b)).map( _._2.toArray(ids(i)) ).collect
   temp(0)
 }
 val time2 : Long = System.currentTimeMillis
