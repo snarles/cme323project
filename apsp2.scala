@@ -1,6 +1,5 @@
 // [CHARLES] Interactive port of spark-all-pairs-shortest-path for educational purposes
-// [CHARLES] Everything is single-core, one partition
-// [CHARLES] Removes use of GridPartitioner
+// [CHARLES] Replaces use of GridPartitioner with HashPartitioner
 
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
@@ -12,6 +11,7 @@ import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.GraphGenerators
 import org.apache.log4j.Logger
 import org.apache.log4j.Level
+import org.apache.spark.HashPartitioner
 
 sc.setCheckpointDir("checkpoint/")
 
@@ -75,10 +75,11 @@ def addInfinity(A: SparseMatrix, rowBlockID: Int, colBlockID: Int): Matrix = {
   fromBreeze(result)
 }
 
-// [CHARLES] Removed references of GridPartitioner from the following code
+// [CHARLES] Replaced references of GridPartitioner from the following code
 
+// [CHARLES] ADDED ApspPartitioner here
 def generateInput(graph: Graph[Long,Double], n: Int, sc:SparkContext,
-                    RowsPerBlock: Int, ColsPerBlock: Int): BlockMatrix = {
+                    RowsPerBlock: Int, ColsPerBlock: Int, ApspPartitioner: HashPartitioner): BlockMatrix = {
   val entries = graph.edges.map { case edge => MatrixEntry(edge.srcId.toInt, edge.dstId.toInt, edge.attr) }
   val coordMat = new CoordinateMatrix(entries, n, n)
   val matA = coordMat.toBlockMatrix(RowsPerBlock, ColsPerBlock)
@@ -111,7 +112,7 @@ def generateInput(graph: Graph[Long,Double], n: Int, sc:SparkContext,
     ((i, j), newMat)
   }
   }
-  val initialBlocks = addedBlocks.union(matA.blocks) // [CHARLES] Removed partitionBy
+  val initialBlocks = addedBlocks.union(matA.blocks).partitionBy(ApspPartitioner)
   val blocks: RDD[((Int, Int), Matrix)] = initialBlocks.map { case ((i, j), v) => {
     val converted = v match {
       case dense: DenseMatrix => dense
@@ -123,9 +124,9 @@ def generateInput(graph: Graph[Long,Double], n: Int, sc:SparkContext,
   new BlockMatrix(blocks, matA.rowsPerBlock, matA.colsPerBlock, n, n)
 }
 
-def blockMin(Ablocks: RDD[((Int, Int), Matrix)], Bblocks: RDD[((Int, Int), Matrix)]): RDD[((Int, Int), Matrix)] = {
-  // [CHARLES] Removed ApspPartitioner argument
-  val addedBlocks = Ablocks.join(Bblocks).mapValues {  // [CHARLES] Removed ApspPartitioner from join
+def blockMin(Ablocks: RDD[((Int, Int), Matrix)], Bblocks: RDD[((Int, Int), Matrix)],
+             ApspPartitioner: HashPartitioner): RDD[((Int, Int), Matrix)] = {
+  val addedBlocks = Ablocks.join(Bblocks, ApspPartitioner).mapValues {
     case (a, b) => fromBreeze(min(toBreeze(a), toBreeze(b)))
   }
   addedBlocks
@@ -133,8 +134,8 @@ def blockMin(Ablocks: RDD[((Int, Int), Matrix)], Bblocks: RDD[((Int, Int), Matri
 
 
 def blockMinPlus(Ablocks: RDD[((Int, Int), Matrix)], Bblocks: RDD[((Int, Int), Matrix)],
-                 numRowBlocks: Int, numColBlocks: Int): RDD[((Int, Int), Matrix)] = {
-// [CHARLES] Removed ApspPartitioner argument
+                 numRowBlocks: Int, numColBlocks: Int,
+                 ApspPartitioner: HashPartitioner): RDD[((Int, Int), Matrix)] = {
   // Each block of A must do cross plus with the corresponding blocks in each column of B.
   // TODO: Optimize to send block to a partition once, similar to ALS
   val flatA = Ablocks.flatMap { case ((blockRowIndex, blockColIndex), block) =>
@@ -144,17 +145,17 @@ def blockMinPlus(Ablocks: RDD[((Int, Int), Matrix)], Bblocks: RDD[((Int, Int), M
   val flatB = Bblocks.flatMap { case ((blockRowIndex, blockColIndex), block) =>
     Iterator.tabulate(numRowBlocks)(i => ((i, blockColIndex, blockRowIndex), block))
   }
-  val newBlocks = flatA.join(flatB)// [CHARLES] Removed ApspPartitioner from join
+  val newBlocks = flatA.join(flatB, ApspPartitioner)
     .map { case ((blockRowIndex, blockColIndex, _), (a, b)) =>
       val C = localMinPlus(toBreeze(a), toBreeze(b))
       ((blockRowIndex, blockColIndex), C)
-    }.reduceByKey((a, b) => min(a, b)) // [CHARLES] Removed ApspPartitioner from reduceByKey
+    }.reduceByKey(ApspPartitioner, (a, b) => min(a, b))
     .mapValues(C => fromBreeze(C))
   return newBlocks
 }
 
 
-def distributedApsp(A: BlockMatrix, stepSize: Int, // [CHARLES] Removed ApspPartitioner argument
+def distributedApsp(A: BlockMatrix, stepSize: Int, ApspPartitioner: HashPartitioner,
                     sc: SparkContext): BlockMatrix = {
   require(A.numRows() == A.numCols(), "The adjacency matrix must be square.")
   require(A.numRowBlocks == A.numColBlocks, "The blocks making up the adjacency matrix must be square.")
@@ -231,7 +232,7 @@ def distributedApsp(A: BlockMatrix, stepSize: Int, // [CHARLES] Removed ApspPart
             case EndBlock =>
               ((i, j), fromBreeze(toBreeze(localMat)(0 to endIndex, ::)))
           }
-        }, 2, A.numColBlocks) // [CHARLES]: Removed ApspPartitioner argument
+        }, 2, A.numColBlocks, ApspPartitioner)
       colRDD = blockMinPlus(apspRDD.filter(kv => kv._1._2 == StartBlock || kv._1._2 == EndBlock)
         .map { case ((i, j), localMat) =>
           j match {
@@ -240,10 +241,11 @@ def distributedApsp(A: BlockMatrix, stepSize: Int, // [CHARLES] Removed ApspPart
             case EndBlock =>
               ((i, j), fromBreeze(toBreeze(localMat)(::, 0 to endIndex)))
           }
-        }, squareMatRDD, A.numRowBlocks, 2) // [CHARLES]: Removed ApspPartitioner argument
+        }, squareMatRDD, A.numRowBlocks, 2, ApspPartitioner)
     }
 
-    apspRDD = blockMin(apspRDD, blockMinPlus(colRDD, rowRDD, A.numRowBlocks, A.numColBlocks)) // [CHARLES]: Removed two ApspPartitioner arguments
+    apspRDD = blockMin(apspRDD, blockMinPlus(colRDD, rowRDD, A.numRowBlocks, A.numColBlocks, ApspPartitioner),
+                ApspPartitioner)
   }
   new BlockMatrix(apspRDD, A.rowsPerBlock, A.colsPerBlock, n, n)
 }
@@ -255,10 +257,11 @@ val n = 8
 val m = 4
 val stepSize = 2
 val graph = generateGraph(n, sc)
-val matA = generateInput(graph, n, sc, m, m)
+val ApspPartitioner = new HashPartitioner(4)
+val matA = generateInput(graph, n, sc, m, m, ApspPartitioner)
 val localMat = matA.toLocalMatrix()
 
-val resultMat = distributedApsp(matA, stepSize, sc)// [CHARLES] Removed ApspPartitioner argument
+val resultMat = distributedApsp(matA, stepSize, ApspPartitioner, sc)
 val ans = resultMat.toLocalMatrix()
 val localAns = localFW(toBreeze(localMat))
 
