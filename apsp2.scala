@@ -265,3 +265,21 @@ val resultMat = distributedApsp(matA, stepSize, ApspPartitioner, sc)
 val ans = resultMat.toLocalMatrix()
 val localAns = localFW(toBreeze(localMat))
 
+
+// [CHARLES] lookup
+import org.apache.spark.mllib.random.UniformGenerator
+val nlook = m
+val r = new UniformGenerator()
+val seed = 1398
+r.setSeed(seed)
+val ids = (for (i <- 0 to nlook-1) yield(r.nextValue())).zipWithIndex.sortBy(_._1).map(_._2)
+var lala = ids
+val time1 : Long = System.currentTimeMillis
+for (i <- 0 to (nlook - 1)) yield {
+  val a = i % 2
+  val b = (i/2) % 2
+  val temp = matA.blocks.filter(_._1 == (1, 1)).map( _._2.toArray(ids(i)) ).collect
+  temp(0)
+}
+val time2 : Long = System.currentTimeMillis
+val time : Double = (time2 - time1).toFloat / 1000
