@@ -1,0 +1,76 @@
+---
+title: "Recording shortest paths in Floyd-Warshall"
+author: "Charles Zheng"
+date: "06/20/2015"
+output: html_document
+---
+
+# Setup
+
+Let $A$ be an $n \times n$ adjacency matrix of a weighted directed graph (missing edges = $\infty$.)
+
+The Floyd-Warshall algorithm can be used to find the shortest path distances while also recording the shortest paths.
+
+Let $S$ be the matrix of shortest path distances.  Initialize $S^{(0})} = A$.
+Let $P$ be an $n \times n$ array of vectors containing the sequences of nodes constituting the shortest paths (including the end node but not the start node).
+
+For iteration $k = 1,...,n$.
+ * For $i, j \in [n]^2$:
+ * If $S_{ij} > S_{ik} + S_{kj}$, then update $S_{ij} \rightarrow S_{ik} + S_{kj}$.  Also update $P_{ij} \rightarrow P_{ik} + P_{kj}$ where `+` denotes list concatenation.
+ * EndFor
+
+Code for Floyd-Warshall:
+
+```{r}
+library(matlab, quietly = TRUE)
+floyd_warshall <- function(A) {
+  n <- dim(A)[1]
+  S <- A
+  P <- cell(n)
+  # intialize P
+  #  P[i, j] is a vector v where v[i] indicates position of node and
+  #  names(P)[i] indicates the node ID
+  for (i in 1:n) {
+    for (j in 1:n) {
+      P[[i, j]] <- 1
+      names(P[[i, j]]) <- rownames(A)[j]
+    }
+  }
+  # Floyd-Warshall algorithm
+  for (k in 1:n) {
+    for (i in 1:n) {
+      for (j in 1:n) {
+        if (S[i, j] > S[i, k] + S[k, j]) {
+          S[i, j] <- S[i, k] + S[k, j]
+          v1 <- P[[i, k]]
+          v2 <- P[[k, j]] + max(v1)
+          P[[i, j]] <- c(v1, v2)
+        }
+      }
+    }
+  }
+  list(S = S, P = P)
+}
+```
+
+In the following simulation, we generate a random graph and label the nodes by `A`, `B`, `C`,... `Z`.
+
+### Graph generation
+
+```{r}
+library(pracma, quietly = TRUE)
+n <- 26
+# random log-normal weights
+A <- exp(randn(n))
+# delete some edges randomly
+A[rand(n) > 0.5] <- Inf
+# set diagonals to 0
+diag(A) <- 0
+rownames(A) <- LETTERS[1:n]
+colnames(A) <- LETTERS[1:n]
+```
+
+Apply the algorithm
+```{r}
+res <- floyd_warshall(A); S <- res$S; P <- res$P
+```
