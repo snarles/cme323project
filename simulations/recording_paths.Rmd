@@ -208,7 +208,7 @@ rec$iter_count
 
 While random selection has decent performance for random graphs or graphs with pre-shuffled vertices, it can be shown to have worst-case performance of taking $O(n/M)$ iterations.
 
-# Greedy $\epsilon$-blocking approach
+# Greedy merging approach
 
 We present a deterministic scheme that has better worst-case performance.  It depends on the following result.
 
@@ -230,9 +230,9 @@ such that
 $$
 \max_{j=0}^{K-1} (x_{i_{j+1}} - x_{i_j}) \leq \epsilon N
 $$
-The result is that there exists such a subsequence with length 
-$$L \leq 4\left(\frac{1}{\epsilon + (2/N)} - \frac{1}{2 + \epsilon N}\right) + 1
-\approx \frac{4}{\epsilon}$$
+The key result is that there exists such a subsequence with length 
+$$L \leq 2\left(\frac{1}{\epsilon + (1/N)} - \frac{1}{1 + \epsilon N}\right) + 1
+\approx \frac{2}{\epsilon}$$
 (where the approximation is for large $N$)
 and furthermore, it can be found using a greedy algorithm.
 
@@ -264,24 +264,35 @@ epsilon_compress <- function(x, epsilon) {
 }
 ```
 
-Define $\epsilon(M) \approx \frac{4}{M}$ to be the constant as a function of $M$
+In fact, any greedy algorithm which repeatedly merges gaps of total distance less than $\epsilon N$ until none remain (in any order) will work.
+
+Define $\epsilon(M) \approx \frac{2}{M}$ to be the constant as a function of $M$
 by
 $$
-\epsilon(M) = \text{argmax}_\epsilon \text{such that }\max_{N=M}^\infty 4\left(\frac{1}{\epsilon + (2/N)} - \frac{1}{2 + \epsilon N}\right) + 1 < M
+\epsilon(M) = \text{argmax}_\epsilon \text{such that }\max_{N=M}^\infty 2\left(\frac{1}{\epsilon + (1/N)} - \frac{1}{1 + \epsilon N}\right) + 1 < M
 $$
-Note: $\epsilon(M)$ is undefined for $M = 1$.
+It turns out the maximum over $N$ is always attained in the infinite limit.  Therefore we have
+$$
+\epsilon(M) = \min(1, \frac{2}{M - 1})
+$$
 
 We compute an approximation of $\epsilon(M)$
 ```{r}
 ns <- 1:1000
 eps <- 100/(100:10000)
-grid <- data.frame(eps = rep(eps, each = length(ns)), ns = rep(ns, length(eps)))
-Mval <- 4 * (1/(grid$eps + (2/grid$ns)) - 1/(2 + grid$eps * grid$ns)) + 1
-Mc <- ceil(Mval)
+epsmat <- repmat(t(t(eps)), 1, length(ns))
+nsmat <- col(epsmat)
+Mval <- 2 * (1/(epsmat + (1/nsmat)) - 1/(1 + epsmat * nsmat)) + 1
+Mval <- pmin(Mval, nsmat)
+Mlim <- 2/eps + 1
+Mc <- apply(cbind(Mval, Mlim), 1, max)
 Ms <- 1:100
-epsilon_M <- sapply(Ms, function(M) grid$eps[max(which(Mval[grid$ns < M] <= M))])
-#nlim <- sapply(Ms, function(M) grid$ns[max(which(Mval[grid$ns < M] <= M))])
-plot(Ms[-1], epsilon_M[-1], type = "l")
+epsilon_M <- sapply(Ms, function(M) max(eps[Mc > M]))
+nlim <- apply(Mval, 1, function(v) which(v == max(v))[1])
+#plot(nlim)
+plot(Ms, epsilon_M, type = "l", lwd = 2)
+lines(Ms, 2/(Ms-1), col = "red")
+title(expression(epsilon(M)))
 ```
 
 Check that our bound holds.
@@ -307,10 +318,11 @@ length(xsub)
 
 In practice the length of the subsequence is much less than $M$.
 
-## $M$-blocking
+## Greedy merging
 
 The greedy $\epsilon$-compression algorithm aggressively minimizes the subsequence length.
 Instead, we might simply want to find a subsequence of length $M$.
+The following intuitive algorithm (M-blocking) merges short intervals.
 
 ```{r}
 diff2 <- function(x) {x[1:(length(x) - 2)] - x[-(1:2)]}
@@ -329,11 +341,11 @@ M_blocking <- function(x, M) {
 
 By a kind of duality, if $\epsilon = \epsilon(M)$ and $x$ is a sequence with gaps bounded by $\epsilon N$, then the output of M-blocking also has gaps bounded by $\epsilon N$.
 
-## Intermediate node selection via $M$-blocking
+## Intermediate node selection via greedy merging
 
 We use the greedy M-blocking algorithm to decide which nodes of the path to keep.
 
-Greedy subroutine (inside the inner loop of Floyd-Warshall):
+Greedy merging subroutine (inside the inner loop of Floyd-Warshall):
 
  * If $S_{ij} > S_{ik} + S_{kj}$, then:
  * $S_{ij} \leftarrow S_{ik} + S_{kj}$
@@ -345,7 +357,9 @@ Greedy subroutine (inside the inner loop of Floyd-Warshall):
  * EndIf
  * EndIf
 
-The algorithm works because of the following recursive principle: the gaps between the stored nodes in $P_{ik}$ and the gaps between the stored nodes in $P_{kj}$ are respectively bounded by $\epsilon$ times their respective path lengths, and hence both bounded by $\epsilon$ times the new path length of $P_{ij}$.  This allows our key result to be applied which guarantees that we can select $M$ intermediate nodes that are spaced at most $\epsilon(M-1) \ell$ apart.
+The algorithm works because of the following recursive principle: suppose the gaps between the stored nodes in $P_{ik}$ and the gaps between the stored nodes in $P_{kj}$ are respectively bounded by $\epsilon$ times their respective path lengths, then they both bounded by $\epsilon$ times the new path length of $P_{ij}$, and if $\epsilon = \epsilon(M + 1)$ then our key result implies that the output of the M-blocking algorithm has gaps which are at most $\epsilon(M + 1) \ell$ apart.  (We use $M + 1$ instead of $M$, since we are not counting the final node.)
+
+The consequence of this is that we need on the order of $\frac{\log(\ell)}{\log(\epsilon(M + 1))}$ iterations to recover the path in the worst case.  Since $\epsilon(M + 1) = \max(1, \frac{2}{M})$, this implies that the recovery is $O(\log(\ell))$ for $M \geq 3$.
 
 ```{r}
 fw_greedy <- function(A, M) {
