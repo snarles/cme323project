@@ -12,17 +12,18 @@ Let $A$ be an $n \times n$ adjacency matrix of a weighted directed graph (missin
 The Floyd-Warshall algorithm can be used to find the shortest path distances while also recording the shortest paths.
 
 Let $S$ be the matrix of shortest path distances.  Initialize $S^{(0)} = A$.
-Let $P$ be an $n \times n$ array of vectors containing the sequences of nodes constituting the shortest paths (including the end node but not the start node).
+Let $P$ be an $n \times n$ array of vectors containing the sequences of nodes constituting the shortest paths (containing both the start and end).
 
 For iteration $k = 1,...,n$.
+
  * For $i, j \in [n]^2$:
- * If $S_{ij} > S_{ik} + S_{kj}$, then update $S_{ij} \rightarrow S_{ik} + S_{kj}$.  Also update $P_{ij} \rightarrow P_{ik} + P_{kj}$ where `+` denotes list concatenation.
+ * If $S_{ij} > S_{ik} + S_{kj}$, then update $S_{ij} \leftarrow S_{ik} + S_{kj}$.  Also update $P_{ij} \leftarrow P_{ik} + P_{kj}$ where `+` denotes list concatenation.
  * EndFor
 
 Code for Floyd-Warshall:
 
 ```{r}
-library(matlab, quietly = TRUE)
+library(matlab, quietly = TRUE, warn.conflicts = FALSE)
 floyd_warshall <- function(A) {
   n <- dim(A)[1]
   S <- A
@@ -33,8 +34,8 @@ floyd_warshall <- function(A) {
   #  names(P)[i] indicates the node ID
   for (i in 1:n) {
     for (j in 1:n) {
-      P[[i, j]] <- 1
-      names(P[[i, j]]) <- rownames(A)[j]
+      P[[i, j]] <- c(0, 1)
+      names(P[[i, j]]) <- rownames(A)[c(i, j)]
     }
   }
   # Floyd-Warshall algorithm
@@ -45,7 +46,7 @@ floyd_warshall <- function(A) {
           S[i, j] <- S[i, k] + S[k, j]
           v1 <- P[[i, k]]
           v2 <- P[[k, j]] + max(v1)
-          P[[i, j]] <- c(v1, v2)
+          P[[i, j]] <- c(v1, v2[-1])
         }
       }
     }
@@ -59,23 +60,25 @@ In the following simulation, we generate a random graph and label the nodes by `
 ### Graph generation
 
 ```{r}
-library(pracma, quietly = TRUE)
-n <- 26
+library(pracma, quietly = TRUE, warn.conflicts = FALSE)
+n <- 50
 # random log-normal weights
 A <- exp(randn(n))
 # delete some edges randomly
-A[rand(n) > 0.8] <- Inf
+A[rand(n) > 3/n] <- Inf
 # set diagonals to 0
 diag(A) <- 0
-rownames(A) <- LETTERS[1:n]
-colnames(A) <- LETTERS[1:n]
+SLETTERS <- c(LETTERS, paste0(rep(LETTERS, each = 26), rep(LETTERS, 26)))
+rownames(A) <- SLETTERS[1:n]
+colnames(A) <- SLETTERS[1:n]
 ```
 
 Apply the algorithm
 ```{r}
 res <- floyd_warshall(A); S <- res$S; P <- res$P
 # the path lengths
-L <- apply(P, c(1, 2), function(v) length(v[[1]]))
+L <- apply(P, c(1, 2), function(v) max(v[[1]]))
+table(L)
 ```
 
 Find a particular path (of large length) and check it
@@ -88,10 +91,9 @@ P[[i, j]]
 
 Is this indeed the shortest path?
 ```{r}
-nodes <- c(rownames(P)[i], names(P[[i, j]]))
+nodes <- names(P[[i, j]])
 (edges <- cbind(nodes[-length(nodes)], nodes[-1]))
 interdists <- A[edges]
-interdists
 S[i, j]
 sum(interdists)
 ```
@@ -100,16 +102,29 @@ sum(interdists)
 
 On a large graph, the cost of storing the complete path information may grow at $O(n^4)$.
 
-It is necessary to store partial path information.  Any path can be rebuilt from a query iteratively.
+To reduce the storage requirement, we can store partial path information in each entry $P_{ij}$.  After the completion of the FW algorithm, any complete path can be recovered by iteratively querying the elements of $P_{ij}$.
 
 Consider fixing a number $M$ which limits the number of node that can be stored per path (per pair of vertices.)  How can we choose which nodes to store (each time a path is upated in Floyd-Warshall) so that we can efficiently query the path later?
 
-# Example approach: random selection
+Note, $M$ does not include the start and end nodes, which we are storing for convenience of exposition.  So in our implementation we store $M + 2$ nodes.
+
+# Random selection approach
 
 Here is one approach to the problem.
 Whenever the number of nodes in the path exceeds $M$, uniformly downsample the nodes selected.
 As a convention, always keep the end node.
 There is no need to keep the end node, but in this example it keeps track of the path length, which is convenient.
+
+Downsampling subroutine (inside the inner loop of Floyd-Warshall):
+
+ * If $S_{ij} > S_{ik} + S_{kj}$, then:
+ * $S_{ij} \leftarrow S_{ik} + S_{kj}$
+ * $P_{ij} \leftarrow P_{ik} + P_{kj}$
+ * If $P_{ij}$ contains more than $M$ intermediate nodes:
+ * Choose $M$ of intermediate nodes at random (without replacement)
+ and store only those nodes in $P_{ij}$.
+ * EndIf
+ * EndIf
 
 ```{r}
 fw_downsample <- function(A, M) {
@@ -119,8 +134,8 @@ fw_downsample <- function(A, M) {
   rownames(P) <- rownames(A); colnames(P) <- colnames(A)
   for (i in 1:n) {
     for (j in 1:n) {
-      P[[i, j]] <- 1
-      names(P[[i, j]]) <- rownames(A)[j]
+      P[[i, j]] <- c(0, 1)
+      names(P[[i, j]]) <- rownames(A)[c(i, j)]
     }
   }
   for (k in 1:n) {
@@ -130,11 +145,12 @@ fw_downsample <- function(A, M) {
           S[i, j] <- S[i, k] + S[k, j]
           v1 <- P[[i, k]]
           v2 <- P[[k, j]] + max(v1)
+          v <- c(v1, v2[-1])
           # downsampling step
-          v <- c(v1, v2)
-          if (length(v) > M) {
-            inds <- sort(sample(length(v) - 1, M - 1, replace = FALSE))
-            v <- v[c(inds, length(v))]
+          if (length(v) > M + 2) {
+            vmid <- v[2:(length(v) - 1)]
+            inds <- sort(sample(length(vmid), M, replace = FALSE))
+            v <- c(v[1], vmid[inds], v[length(v)])
           }
           P[[i, j]] <- v
         }
@@ -147,20 +163,117 @@ fw_downsample <- function(A, M) {
 
 Code for recovering path $P_{i, j}$.
 ```{r}
+diff1 <- function(v) v[-length(v)] - v[-1]
 query_path <- function(P, i, j) {
-  
+  iter_count <- 1
+  nodes <- P[[i, j]]
+  while (max(-diff1(nodes)) > 1) {
+    iter_count <- iter_count + 1
+    gaps <- which(-diff1(nodes) > 1)
+    edges <- cbind(names(nodes)[-length(nodes)], names(nodes)[-1])[gaps, , drop = FALSE]
+    paths <- P[edges]
+    # insert missing nodes
+    for (no in 1:length(gaps)) {
+      edge <- edges[no, ]
+      path <- paths[[no]]
+      ind <- which(names(nodes) == edge[1])
+      pos <- nodes[ind]
+      pre_edge <- nodes[1:ind]
+      post_edge <- nodes[(ind + 1):length(nodes)]
+      # insert path between pre-edge and post_edge (minus duplicated end node)
+      nodes <- c(pre_edge, pos + path[-1], post_edge[-1])
+    }
+  }
+  list(path = nodes, iter_count = iter_count)
 }
 ```
 
-Downsample keeping 3 nodes
+Downsample with $M = 3$
 ```{r}
 res_d <- fw_downsample(A, 3)
+# the full path
+P[[i, j]]
+# the stored path
 res_d$P[[i, j]]
 ```
 
-# Solution: $\epsilon$-blocking.
+Recover the full path
+```{r}
+rec <- query_path(res_d$P, i, j)
+# the recovered full path
+rec$path
+# number of iterations
+rec$iter_count
+```
 
+While random selection has decent performance for random graphs or graphs with pre-shuffled vertices, it can be shown to have worst-case performance of taking $O(n/M)$ iterations.
 
+# Greedy $\epsilon$-blocking approach
+
+We present a deterministic scheme that has better worst-case performance.  It depends on the following result.
+
+## Subsequence compression theorem
+
+Suppose we have a sequence of integers
+$$
+x_0 = 0 \leq x_1 \leq x_2 \leq ... \leq x_{L-1} \leq x_L = N
+$$
+satisfying
+$$
+\max_{j=0}^{L-1} (x_{j+1} - x_j) \leq \epsilon N
+$$
+Now consider all subsequences of the form
+$$
+x_{i_0} = 0 \leq x_{i_1} \leq ... \leq x_{i_K} \leq x_{i_K} = x_L = N
+$$
+such that
+$$
+\max_{j=0}^{K-1} (x_{i_{j+1}} - x_{i_j}) \leq \epsilon N
+$$
+The result is that there exists such a subsequence with length 
+$$L \leq 4\left(\frac{1}{\epsilon + (2/N)} - \frac{1}{2 + \epsilon N}\right) + 1
+\approx \frac{4}{\epsilon}$$
+(where the approximation is for large $N$)
+and furthermore, it can be found using a greedy algorithm.
+
+Define $\epsilon(M) \approx \frac{4}{M}$ to be the constant as a function of $M$
+by
+$$
+\epsilon(M) = \text{argmax}_\epsilon \text{such that }\max_{N=M}^\infty 4\left(\frac{1}{\epsilon + (2/N)} - \frac{1}{2 + \epsilon N}\right) + 1 < M
+$$
+Note: $\epsilon(M)$ is undefined for $M = 1$.
+
+We compute an approximation of $\epsilon(M)$
+```{r}
+ns <- 1:1000
+eps <- 100/(100:10000)
+grid <- data.frame(eps = rep(eps, each = length(ns)), ns = rep(ns, length(eps)))
+Mval <- 4 * (1/(grid$eps + (2/grid$ns)) - 1/(2 + grid$eps * grid$ns)) + 1
+Mc <- ceil(Mval)
+Ms <- 1:100
+epsilon_M <- sapply(Ms, function(M) grid$eps[max(which(Mval[grid$ns < M] <= M))])
+#nlim <- sapply(Ms, function(M) grid$ns[max(which(Mval[grid$ns < M] <= M))])
+plot(Ms[-1], epsilon_M[-1], type = "l")
+```
+
+## Intermediate node selection via $\epsilon$-blocking
+
+We use this greedy algorithm to decide which nodes of the path to keep.
+
+Greedy subroutine (inside the inner loop of Floyd-Warshall):
+
+ * If $S_{ij} > S_{ik} + S_{kj}$, then:
+ * $S_{ij} \leftarrow S_{ik} + S_{kj}$
+ * $P_{ij} \leftarrow P_{ik} + P_{kj}$
+ * If $P_{ij}$ contains more than $M$ intermediate nodes:
+ * Let $x_1,...,x_{L-1}$ denote the positions of those intermediate nodes along the path and let $\ell = x_L$ denote the length of the path
+ * Use greedy algorithm to find a subsequence $x_{i_1}, ..., x_{i_M}$
+ such that $\max (x_{i_{j+1}} - x_{i_j}) < \epsilon(M-1) \ell$
+ * Store only those $M$ intermediate nodes corresponding to the subsequence in $P_{ij}$
+ * EndIf
+ * EndIf
+
+The algorithm works because of the following recursive principle: the gaps between the stored nodes in $P_{ik}$ and the gaps between the stored nodes in $P_{kj}$ are respectively bounded by $\epsilon$ times their respective path lengths, and hence both bounded by $\epsilon$ times the new path length of $P_{ij}$.  This allows our key result to be applied which guarantees that we can select $M$ intermediate nodes that are spaced at most $\epsilon \ell$ apart.
 
 
 
