@@ -11,7 +11,7 @@ Let $A$ be an $n \times n$ adjacency matrix of a weighted directed graph (missin
 
 The Floyd-Warshall algorithm can be used to find the shortest path distances while also recording the shortest paths.
 
-Let $S$ be the matrix of shortest path distances.  Initialize $S^{(0})} = A$.
+Let $S$ be the matrix of shortest path distances.  Initialize $S^{(0)} = A$.
 Let $P$ be an $n \times n$ array of vectors containing the sequences of nodes constituting the shortest paths (including the end node but not the start node).
 
 For iteration $k = 1,...,n$.
@@ -27,6 +27,7 @@ floyd_warshall <- function(A) {
   n <- dim(A)[1]
   S <- A
   P <- cell(n)
+  rownames(P) <- rownames(A); colnames(P) <- colnames(A)
   # intialize P
   #  P[i, j] is a vector v where v[i] indicates position of node and
   #  names(P)[i] indicates the node ID
@@ -63,7 +64,7 @@ n <- 26
 # random log-normal weights
 A <- exp(randn(n))
 # delete some edges randomly
-A[rand(n) > 0.5] <- Inf
+A[rand(n) > 0.8] <- Inf
 # set diagonals to 0
 diag(A) <- 0
 rownames(A) <- LETTERS[1:n]
@@ -73,4 +74,94 @@ colnames(A) <- LETTERS[1:n]
 Apply the algorithm
 ```{r}
 res <- floyd_warshall(A); S <- res$S; P <- res$P
+# the path lengths
+L <- apply(P, c(1, 2), function(v) length(v[[1]]))
 ```
+
+Find a particular path (of large length) and check it
+```{r}
+i <- row(L)[L == max(L)][1]
+j <- col(L)[L == max(L)][1]
+L[i, j]
+P[[i, j]]
+```
+
+Is this indeed the shortest path?
+```{r}
+nodes <- c(rownames(P)[i], names(P[[i, j]]))
+(edges <- cbind(nodes[-length(nodes)], nodes[-1]))
+interdists <- A[edges]
+interdists
+S[i, j]
+sum(interdists)
+```
+
+# Problem
+
+On a large graph, the cost of storing the complete path information may grow at $O(n^4)$.
+
+It is necessary to store partial path information.  Any path can be rebuilt from a query iteratively.
+
+Consider fixing a number $M$ which limits the number of node that can be stored per path (per pair of vertices.)  How can we choose which nodes to store (each time a path is upated in Floyd-Warshall) so that we can efficiently query the path later?
+
+# Example approach: random selection
+
+Here is one approach to the problem.
+Whenever the number of nodes in the path exceeds $M$, uniformly downsample the nodes selected.
+As a convention, always keep the end node.
+There is no need to keep the end node, but in this example it keeps track of the path length, which is convenient.
+
+```{r}
+fw_downsample <- function(A, M) {
+  n <- dim(A)[1]
+  S <- A
+  P <- cell(n)
+  rownames(P) <- rownames(A); colnames(P) <- colnames(A)
+  for (i in 1:n) {
+    for (j in 1:n) {
+      P[[i, j]] <- 1
+      names(P[[i, j]]) <- rownames(A)[j]
+    }
+  }
+  for (k in 1:n) {
+    for (i in 1:n) {
+      for (j in 1:n) {
+        if (S[i, j] > S[i, k] + S[k, j]) {
+          S[i, j] <- S[i, k] + S[k, j]
+          v1 <- P[[i, k]]
+          v2 <- P[[k, j]] + max(v1)
+          # downsampling step
+          v <- c(v1, v2)
+          if (length(v) > M) {
+            inds <- sort(sample(length(v) - 1, M - 1, replace = FALSE))
+            v <- v[c(inds, length(v))]
+          }
+          P[[i, j]] <- v
+        }
+      }
+    }
+  }
+  list(S = S, P = P)  
+}
+```
+
+Code for recovering path $P_{i, j}$.
+```{r}
+query_path <- function(P, i, j) {
+  
+}
+```
+
+Downsample keeping 3 nodes
+```{r}
+res_d <- fw_downsample(A, 3)
+res_d$P[[i, j]]
+```
+
+# Solution: $\epsilon$-blocking.
+
+
+
+
+
+
