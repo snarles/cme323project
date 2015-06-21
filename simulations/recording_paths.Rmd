@@ -171,7 +171,7 @@ query_path <- function(P, i, j) {
     iter_count <- iter_count + 1
     gaps <- which(-diff1(nodes) > 1)
     edges <- cbind(names(nodes)[-length(nodes)], names(nodes)[-1])[gaps, , drop = FALSE]
-    paths <- P[edges]
+    paths <- P[edges, drop = FALSE]
     # insert missing nodes
     for (no in 1:length(gaps)) {
       edge <- edges[no, ]
@@ -236,6 +236,34 @@ $$L \leq 4\left(\frac{1}{\epsilon + (2/N)} - \frac{1}{2 + \epsilon N}\right) + 1
 (where the approximation is for large $N$)
 and furthermore, it can be found using a greedy algorithm.
 
+The greedy algorithm is as follows (code):
+```{r}
+epsilon_check <- function(x, epsilon) {
+  L <- length(x)
+  N <- x[L]
+  val1 <- x[1]==0
+  val2 <- max(-diff1(x)) <= epsilon * N
+  val1 && val2
+}
+
+epsilon_compress <- function(x, epsilon) {
+  L <- length(x)
+  N <- x[L]
+  stopifnot(epsilon_check(x, epsilon))
+  filt <- rep(FALSE, L)  # indices of subsequence
+  blockend <- 1
+  flag <- TRUE
+  while (blockend < L) {
+    blockstart <- blockend
+    filt[blockstart] <- TRUE
+    blockend <- max(which(x - x[blockstart] < epsilon * N))
+  }
+  filt[blockend] <- TRUE
+  stopifnot(-diff1(x[filt]) <= epsilon * N)
+  x[filt]
+}
+```
+
 Define $\epsilon(M) \approx \frac{4}{M}$ to be the constant as a function of $M$
 by
 $$
@@ -256,6 +284,29 @@ epsilon_M <- sapply(Ms, function(M) grid$eps[max(which(Mval[grid$ns < M] <= M))]
 plot(Ms[-1], epsilon_M[-1], type = "l")
 ```
 
+Check that our bound holds.
+```{r}
+generate_input_x <- function(N, Lmin, epsilon) {
+  x <- sort(c(0, sample(N-1, Lmin, replace = FALSE), N))
+  while (max(-diff1(x)) > epsilon * N) {
+    inds <- which(-diff1(x) > epsilon * N)
+    lowers <- x[inds] + 1
+    uppers <- x[inds + 1]
+    added <- floor(lowers + (uppers - lowers) * runif(length(inds)))
+    x <- sort(c(x, added))
+  }
+  x
+}
+M <- 50
+epsilon <- epsilon_M[M]
+x <- generate_input_x(1000, M * 2, epsilon)
+## compress and check length
+xsub <- epsilon_compress(x, epsilon)
+length(xsub)
+```
+
+In practice the length of the subsequence is much less than $M$.
+
 ## Intermediate node selection via $\epsilon$-blocking
 
 We use this greedy algorithm to decide which nodes of the path to keep.
@@ -275,6 +326,83 @@ Greedy subroutine (inside the inner loop of Floyd-Warshall):
 
 The algorithm works because of the following recursive principle: the gaps between the stored nodes in $P_{ik}$ and the gaps between the stored nodes in $P_{kj}$ are respectively bounded by $\epsilon$ times their respective path lengths, and hence both bounded by $\epsilon$ times the new path length of $P_{ij}$.  This allows our key result to be applied which guarantees that we can select $M$ intermediate nodes that are spaced at most $\epsilon \ell$ apart.
 
+In practice since $\epsilon(M - 1)$ is too conversative, we manually choose $\epsilon$ and add a truncation step as a safeguard.
+
+```{r}
+fw_greedy <- function(A, M, epsilon = epsilon_M[M - 1]) {
+  n <- dim(A)[1]
+  S <- A
+  P <- cell(n)
+  rownames(P) <- rownames(A); colnames(P) <- colnames(A)
+  for (i in 1:n) {
+    for (j in 1:n) {
+      P[[i, j]] <- c(0, 1)
+      names(P[[i, j]]) <- rownames(A)[c(i, j)]
+    }
+  }
+  for (k in 1:n) {
+    for (i in 1:n) {
+      for (j in 1:n) {
+        if (S[i, j] > S[i, k] + S[k, j]) {
+          S[i, j] <- S[i, k] + S[k, j]
+          v1 <- P[[i, k]]
+          v2 <- P[[k, j]] + max(v1)
+          v <- c(v1, v2[-1])
+          # greedy step
+          if ((length(v) > M + 2) && (epsilon_check(v, epsilon))) {
+            v <- epsilon_compress(v, epsilon)
+          }
+          # in case greedy failed due to epsilon < epsilon(M - 1)
+          if (length(v2) > M + 2) {
+            # truncate
+            v <- c(v[1], v[2:(M+1)], v[length(v)])
+          }
+          P[[i, j]] <- v
+        }
+      }
+    }
+  }
+  list(S = S, P = P)  
+}
+```
 
 
+Greedy with $M = 3$ and $\epsilon = 0.4$
+```{r}
+res_g <- fw_greedy(A, 3, 0.4)
+# the full path
+P[[i, j]]
+# the stored path
+res_g$P[[i, j]]
+```
 
+Recover the full path
+```{r}
+rec <- query_path(res_d$P, i, j)
+# the recovered full path
+rec$path
+# number of iterations
+rec$iter_count
+```
+
+# Comparison for circle graph
+
+The circle graph is the worst case for the random algorithm.
+
+```{r}
+n <- 200
+A <- matrix(Inf, n, n, dimnames = list(SLETTERS[1:n], SLETTERS[1:n]))
+diag(A) <- 0
+A[(row(A) %% n) == (col(A) - 1 %% n)] <- 1
+res_f <- floyd_warshall(A)
+M <- 10
+res_d <- fw_downsample(A, M)
+res_g <- fw_greedy(A, M, 2/M)
+# stored paths
+res_f$P[[1, n]]
+res_d$P[[1, n]]
+res_g$P[[1, n]]
+# iterations for recovery
+query_path(res_d$P, 1, n)$iter_count
+query_path(res_g$P, 1, n)$iter_count
+```
