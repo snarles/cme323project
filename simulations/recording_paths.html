@@ -130,36 +130,41 @@ colnames(A) &lt;- SLETTERS[1:n]</code></pre>
 L &lt;- apply(P, c(1, 2), function(v) max(v[[1]]))
 table(L)</code></pre>
 <pre><code>## L
-##   1   2   3   4   5   6   7   8   9  10  11 
-## 561 263 375 395 361 277 158  69  27  11   3</code></pre>
+##   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16 
+## 676 220 331 367 300 198 112  72  55  55  42  32  22  11   6   1</code></pre>
 <p>Find a particular path (of large length) and check it</p>
 <pre class="r"><code>i &lt;- row(L)[L == max(L)][1]
 j &lt;- col(L)[L == max(L)][1]
 L[i, j]</code></pre>
-<pre><code>## [1] 11</code></pre>
+<pre><code>## [1] 16</code></pre>
 <pre class="r"><code>P[[i, j]]</code></pre>
-<pre><code>##  V AC  Q AP  M  F  K  H AI AR  W  B 
-##  0  1  2  3  4  5  6  7  8  9 10 11</code></pre>
+<pre><code>##  H  E AC AF AE AR AG  Y  N  C  I AJ AW AV  S  V AK 
+##  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16</code></pre>
 <p>Is this indeed the shortest path?</p>
 <pre class="r"><code>nodes &lt;- names(P[[i, j]])
 (edges &lt;- cbind(nodes[-length(nodes)], nodes[-1]))</code></pre>
 <pre><code>##       [,1] [,2]
-##  [1,] &quot;V&quot;  &quot;AC&quot;
-##  [2,] &quot;AC&quot; &quot;Q&quot; 
-##  [3,] &quot;Q&quot;  &quot;AP&quot;
-##  [4,] &quot;AP&quot; &quot;M&quot; 
-##  [5,] &quot;M&quot;  &quot;F&quot; 
-##  [6,] &quot;F&quot;  &quot;K&quot; 
-##  [7,] &quot;K&quot;  &quot;H&quot; 
-##  [8,] &quot;H&quot;  &quot;AI&quot;
-##  [9,] &quot;AI&quot; &quot;AR&quot;
-## [10,] &quot;AR&quot; &quot;W&quot; 
-## [11,] &quot;W&quot;  &quot;B&quot;</code></pre>
+##  [1,] &quot;H&quot;  &quot;E&quot; 
+##  [2,] &quot;E&quot;  &quot;AC&quot;
+##  [3,] &quot;AC&quot; &quot;AF&quot;
+##  [4,] &quot;AF&quot; &quot;AE&quot;
+##  [5,] &quot;AE&quot; &quot;AR&quot;
+##  [6,] &quot;AR&quot; &quot;AG&quot;
+##  [7,] &quot;AG&quot; &quot;Y&quot; 
+##  [8,] &quot;Y&quot;  &quot;N&quot; 
+##  [9,] &quot;N&quot;  &quot;C&quot; 
+## [10,] &quot;C&quot;  &quot;I&quot; 
+## [11,] &quot;I&quot;  &quot;AJ&quot;
+## [12,] &quot;AJ&quot; &quot;AW&quot;
+## [13,] &quot;AW&quot; &quot;AV&quot;
+## [14,] &quot;AV&quot; &quot;S&quot; 
+## [15,] &quot;S&quot;  &quot;V&quot; 
+## [16,] &quot;V&quot;  &quot;AK&quot;</code></pre>
 <pre class="r"><code>interdists &lt;- A[edges]
 S[i, j]</code></pre>
-<pre><code>## [1] 10.86807</code></pre>
+<pre><code>## [1] 19.49006</code></pre>
 <pre class="r"><code>sum(interdists)</code></pre>
-<pre><code>## [1] 10.86807</code></pre>
+<pre><code>## [1] 19.49006</code></pre>
 </div>
 </div>
 <div id="problem" class="section level1">
@@ -242,18 +247,18 @@ query_path &lt;- function(P, i, j) {
 <pre class="r"><code>res_d &lt;- fw_downsample(A, 3)
 # the full path
 P[[i, j]]</code></pre>
-<pre><code>##  V AC  Q AP  M  F  K  H AI AR  W  B 
-##  0  1  2  3  4  5  6  7  8  9 10 11</code></pre>
+<pre><code>##  H  E AC AF AE AR AG  Y  N  C  I AJ AW AV  S  V AK 
+##  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16</code></pre>
 <pre class="r"><code># the stored path
 res_d$P[[i, j]]</code></pre>
-<pre><code>##  V  Q  M AR  B 
-##  0  2  4  9 11</code></pre>
+<pre><code>##  H AG AW  V AK 
+##  0  6 12 15 16</code></pre>
 <p>Recover the full path</p>
 <pre class="r"><code>rec &lt;- query_path(res_d$P, i, j)
 # the recovered full path
 rec$path</code></pre>
-<pre><code>##  V AC  Q AP  M  F  K  H AI AR  W  B 
-##  0  1  2  3  4  5  6  7  8  9 10 11</code></pre>
+<pre><code>##  H  E AC AF AE AR AG  Y  N  C  I AJ AW AV  S  V AK 
+##  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16</code></pre>
 <pre class="r"><code># number of iterations
 rec$iter_count</code></pre>
 <pre><code>## [1] 3</code></pre>
@@ -336,9 +341,26 @@ length(xsub)</code></pre>
 <pre><code>## [1] 8</code></pre>
 <p>In practice the length of the subsequence is much less than <span class="math">\(M\)</span>.</p>
 </div>
-<div id="intermediate-node-selection-via-epsilon-blocking" class="section level2">
-<h2>Intermediate node selection via <span class="math">\(\epsilon\)</span>-blocking</h2>
-<p>We use this greedy algorithm to decide which nodes of the path to keep.</p>
+<div id="m-blocking" class="section level2">
+<h2><span class="math">\(M\)</span>-blocking</h2>
+<p>The greedy <span class="math">\(\epsilon\)</span>-compression algorithm aggressively minimizes the subsequence length. Instead, we might simply want to find a subsequence of length <span class="math">\(M\)</span>.</p>
+<pre class="r"><code>diff2 &lt;- function(x) {x[1:(length(x) - 2)] - x[-(1:2)]}
+
+M_blocking &lt;- function(x, M) {
+  while (length(x) &gt; M + 1) {
+    # find the smallest gap
+    gaps &lt;- diff2(-x)
+    ind &lt;- order(gaps)[1]
+    # remove the guy in the middle
+    x &lt;- x[-(ind + 1)]
+  }
+  x
+}</code></pre>
+<p>By a kind of duality, if <span class="math">\(\epsilon = \epsilon(M)\)</span> and <span class="math">\(x\)</span> is a sequence with gaps bounded by <span class="math">\(\epsilon N\)</span>, then the output of M-blocking also has gaps bounded by <span class="math">\(\epsilon N\)</span>.</p>
+</div>
+<div id="intermediate-node-selection-via-m-blocking" class="section level2">
+<h2>Intermediate node selection via <span class="math">\(M\)</span>-blocking</h2>
+<p>We use the greedy M-blocking algorithm to decide which nodes of the path to keep.</p>
 <p>Greedy subroutine (inside the inner loop of Floyd-Warshall):</p>
 <ul>
 <li>If <span class="math">\(S_{ij} &gt; S_{ik} + S_{kj}\)</span>, then:</li>
@@ -346,14 +368,13 @@ length(xsub)</code></pre>
 <li><span class="math">\(P_{ij} \leftarrow P_{ik} + P_{kj}\)</span></li>
 <li>If <span class="math">\(P_{ij}\)</span> contains more than <span class="math">\(M\)</span> intermediate nodes:</li>
 <li>Let <span class="math">\(x_1,...,x_{L-1}\)</span> denote the positions of those intermediate nodes along the path and let <span class="math">\(\ell = x_L\)</span> denote the length of the path</li>
-<li>Use greedy algorithm to find a subsequence <span class="math">\(x_{i_1}, ..., x_{i_M}\)</span> such that <span class="math">\(\max (x_{i_{j+1}} - x_{i_j}) &lt; \epsilon(M-1) \ell\)</span></li>
+<li>Use M-blocking to find a subsequence <span class="math">\(x_{i_1}, ..., x_{i_M}\)</span></li>
 <li>Store only those <span class="math">\(M\)</span> intermediate nodes corresponding to the subsequence in <span class="math">\(P_{ij}\)</span></li>
 <li>EndIf</li>
 <li>EndIf</li>
 </ul>
-<p>The algorithm works because of the following recursive principle: the gaps between the stored nodes in <span class="math">\(P_{ik}\)</span> and the gaps between the stored nodes in <span class="math">\(P_{kj}\)</span> are respectively bounded by <span class="math">\(\epsilon\)</span> times their respective path lengths, and hence both bounded by <span class="math">\(\epsilon\)</span> times the new path length of <span class="math">\(P_{ij}\)</span>. This allows our key result to be applied which guarantees that we can select <span class="math">\(M\)</span> intermediate nodes that are spaced at most <span class="math">\(\epsilon \ell\)</span> apart.</p>
-<p>In practice since <span class="math">\(\epsilon(M - 1)\)</span> is too conversative, we manually choose <span class="math">\(\epsilon\)</span> and add a truncation step as a safeguard.</p>
-<pre class="r"><code>fw_greedy &lt;- function(A, M, epsilon = epsilon_M[M - 1]) {
+<p>The algorithm works because of the following recursive principle: the gaps between the stored nodes in <span class="math">\(P_{ik}\)</span> and the gaps between the stored nodes in <span class="math">\(P_{kj}\)</span> are respectively bounded by <span class="math">\(\epsilon\)</span> times their respective path lengths, and hence both bounded by <span class="math">\(\epsilon\)</span> times the new path length of <span class="math">\(P_{ij}\)</span>. This allows our key result to be applied which guarantees that we can select <span class="math">\(M\)</span> intermediate nodes that are spaced at most <span class="math">\(\epsilon(M-1) \ell\)</span> apart.</p>
+<pre class="r"><code>fw_greedy &lt;- function(A, M) {
   n &lt;- dim(A)[1]
   S &lt;- A
   P &lt;- cell(n)
@@ -372,38 +393,29 @@ length(xsub)</code></pre>
           v1 &lt;- P[[i, k]]
           v2 &lt;- P[[k, j]] + max(v1)
           v &lt;- c(v1, v2[-1])
-          # greedy step
-          if ((length(v) &gt; M + 2) &amp;&amp; (epsilon_check(v, epsilon))) {
-            v &lt;- epsilon_compress(v, epsilon)
-          }
-          # in case greedy failed due to epsilon &lt; epsilon(M - 1)
-          if (length(v2) &gt; M + 2) {
-            # truncate
-            v &lt;- c(v[1], v[2:(M+1)], v[length(v)])
-          }
-          P[[i, j]] &lt;- v
+          P[[i, j]] &lt;- M_blocking(v, M + 1)
         }
       }
     }
   }
   list(S = S, P = P)  
 }</code></pre>
-<p>Greedy with <span class="math">\(M = 3\)</span> and <span class="math">\(\epsilon = 0.4\)</span></p>
-<pre class="r"><code>res_g &lt;- fw_greedy(A, 3, 0.4)
+<p>Greedy with <span class="math">\(M = 3\)</span>:</p>
+<pre class="r"><code>res_g &lt;- fw_greedy(A, 3)
 # the full path
 P[[i, j]]</code></pre>
-<pre><code>##  V AC  Q AP  M  F  K  H AI AR  W  B 
-##  0  1  2  3  4  5  6  7  8  9 10 11</code></pre>
+<pre><code>##  H  E AC AF AE AR AG  Y  N  C  I AJ AW AV  S  V AK 
+##  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16</code></pre>
 <pre class="r"><code># the stored path
 res_g$P[[i, j]]</code></pre>
-<pre><code>##  V AP  H  B 
-##  0  3  7 11</code></pre>
+<pre><code>##  H AE  N AW AK 
+##  0  4  8 12 16</code></pre>
 <p>Recover the full path</p>
 <pre class="r"><code>rec &lt;- query_path(res_d$P, i, j)
 # the recovered full path
 rec$path</code></pre>
-<pre><code>##  V AC  Q AP  M  F  K  H AI AR  W  B 
-##  0  1  2  3  4  5  6  7  8  9 10 11</code></pre>
+<pre><code>##  H  E AC AF AE AR AG  Y  N  C  I AJ AW AV  S  V AK 
+##  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16</code></pre>
 <pre class="r"><code># number of iterations
 rec$iter_count</code></pre>
 <pre><code>## [1] 3</code></pre>
@@ -419,42 +431,17 @@ A[(row(A) %% n) == (col(A) - 1 %% n)] &lt;- 1
 res_f &lt;- floyd_warshall(A)
 M &lt;- 10
 res_d &lt;- fw_downsample(A, M)
-res_g &lt;- fw_greedy(A, M, 2/M)
+res_g &lt;- fw_greedy(A, M)
 # stored paths
-res_f$P[[1, n]]</code></pre>
-<pre><code>##   A   B   C   D   E   F   G   H   I   J   K   L   M   N   O   P   Q   R 
-##   0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17 
-##   S   T   U   V   W   X   Y   Z  AA  AB  AC  AD  AE  AF  AG  AH  AI  AJ 
-##  18  19  20  21  22  23  24  25  26  27  28  29  30  31  32  33  34  35 
-##  AK  AL  AM  AN  AO  AP  AQ  AR  AS  AT  AU  AV  AW  AX  AY  AZ  BA  BB 
-##  36  37  38  39  40  41  42  43  44  45  46  47  48  49  50  51  52  53 
-##  BC  BD  BE  BF  BG  BH  BI  BJ  BK  BL  BM  BN  BO  BP  BQ  BR  BS  BT 
-##  54  55  56  57  58  59  60  61  62  63  64  65  66  67  68  69  70  71 
-##  BU  BV  BW  BX  BY  BZ  CA  CB  CC  CD  CE  CF  CG  CH  CI  CJ  CK  CL 
-##  72  73  74  75  76  77  78  79  80  81  82  83  84  85  86  87  88  89 
-##  CM  CN  CO  CP  CQ  CR  CS  CT  CU  CV  CW  CX  CY  CZ  DA  DB  DC  DD 
-##  90  91  92  93  94  95  96  97  98  99 100 101 102 103 104 105 106 107 
-##  DE  DF  DG  DH  DI  DJ  DK  DL  DM  DN  DO  DP  DQ  DR  DS  DT  DU  DV 
-## 108 109 110 111 112 113 114 115 116 117 118 119 120 121 122 123 124 125 
-##  DW  DX  DY  DZ  EA  EB  EC  ED  EE  EF  EG  EH  EI  EJ  EK  EL  EM  EN 
-## 126 127 128 129 130 131 132 133 134 135 136 137 138 139 140 141 142 143 
-##  EO  EP  EQ  ER  ES  ET  EU  EV  EW  EX  EY  EZ  FA  FB  FC  FD  FE  FF 
-## 144 145 146 147 148 149 150 151 152 153 154 155 156 157 158 159 160 161 
-##  FG  FH  FI  FJ  FK  FL  FM  FN  FO  FP  FQ  FR  FS  FT  FU  FV  FW  FX 
-## 162 163 164 165 166 167 168 169 170 171 172 173 174 175 176 177 178 179 
-##  FY  FZ  GA  GB  GC  GD  GE  GF  GG  GH  GI  GJ  GK  GL  GM  GN  GO  GP 
-## 180 181 182 183 184 185 186 187 188 189 190 191 192 193 194 195 196 197 
-##  GQ  GR 
-## 198 199</code></pre>
-<pre class="r"><code>res_d$P[[1, n]]</code></pre>
-<pre><code>##   A  EL  FR  FU  GA  GD  GJ  GM  GN  GP  GQ  GR 
-##   0 141 173 176 182 185 191 194 195 197 198 199</code></pre>
+res_d$P[[1, n]]</code></pre>
+<pre><code>##   A  FL  FW  FZ  GG  GI  GJ  GK  GM  GP  GQ  GR 
+##   0 167 178 181 188 190 191 192 194 197 198 199</code></pre>
 <pre class="r"><code>res_g$P[[1, n]]</code></pre>
-<pre><code>##   A  AG  BA  CD  CY  DY  FE  GQ  GR 
-##   0  32  52  81 102 128 160 198 199</code></pre>
+<pre><code>##   A   Q  AO  BO  CI  CV  DI  DX  EQ  FN  GM  GR 
+##   0  16  40  66  86  99 112 127 146 169 194 199</code></pre>
 <pre class="r"><code># iterations for recovery
 query_path(res_d$P, 1, n)$iter_count</code></pre>
-<pre><code>## [1] 7</code></pre>
+<pre><code>## [1] 8</code></pre>
 <pre class="r"><code>query_path(res_g$P, 1, n)$iter_count</code></pre>
 <pre><code>## [1] 3</code></pre>
 </div>

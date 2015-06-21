@@ -307,9 +307,31 @@ length(xsub)
 
 In practice the length of the subsequence is much less than $M$.
 
-## Intermediate node selection via $\epsilon$-blocking
+## $M$-blocking
 
-We use this greedy algorithm to decide which nodes of the path to keep.
+The greedy $\epsilon$-compression algorithm aggressively minimizes the subsequence length.
+Instead, we might simply want to find a subsequence of length $M$.
+
+```{r}
+diff2 <- function(x) {x[1:(length(x) - 2)] - x[-(1:2)]}
+
+M_blocking <- function(x, M) {
+  while (length(x) > M + 1) {
+    # find the smallest gap
+    gaps <- diff2(-x)
+    ind <- order(gaps)[1]
+    # remove the guy in the middle
+    x <- x[-(ind + 1)]
+  }
+  x
+}
+```
+
+By a kind of duality, if $\epsilon = \epsilon(M)$ and $x$ is a sequence with gaps bounded by $\epsilon N$, then the output of M-blocking also has gaps bounded by $\epsilon N$.
+
+## Intermediate node selection via $M$-blocking
+
+We use the greedy M-blocking algorithm to decide which nodes of the path to keep.
 
 Greedy subroutine (inside the inner loop of Floyd-Warshall):
 
@@ -318,18 +340,15 @@ Greedy subroutine (inside the inner loop of Floyd-Warshall):
  * $P_{ij} \leftarrow P_{ik} + P_{kj}$
  * If $P_{ij}$ contains more than $M$ intermediate nodes:
  * Let $x_1,...,x_{L-1}$ denote the positions of those intermediate nodes along the path and let $\ell = x_L$ denote the length of the path
- * Use greedy algorithm to find a subsequence $x_{i_1}, ..., x_{i_M}$
- such that $\max (x_{i_{j+1}} - x_{i_j}) < \epsilon(M-1) \ell$
+ * Use M-blocking to find a subsequence $x_{i_1}, ..., x_{i_M}$
  * Store only those $M$ intermediate nodes corresponding to the subsequence in $P_{ij}$
  * EndIf
  * EndIf
 
-The algorithm works because of the following recursive principle: the gaps between the stored nodes in $P_{ik}$ and the gaps between the stored nodes in $P_{kj}$ are respectively bounded by $\epsilon$ times their respective path lengths, and hence both bounded by $\epsilon$ times the new path length of $P_{ij}$.  This allows our key result to be applied which guarantees that we can select $M$ intermediate nodes that are spaced at most $\epsilon \ell$ apart.
-
-In practice since $\epsilon(M - 1)$ is too conversative, we manually choose $\epsilon$ and add a truncation step as a safeguard.
+The algorithm works because of the following recursive principle: the gaps between the stored nodes in $P_{ik}$ and the gaps between the stored nodes in $P_{kj}$ are respectively bounded by $\epsilon$ times their respective path lengths, and hence both bounded by $\epsilon$ times the new path length of $P_{ij}$.  This allows our key result to be applied which guarantees that we can select $M$ intermediate nodes that are spaced at most $\epsilon(M-1) \ell$ apart.
 
 ```{r}
-fw_greedy <- function(A, M, epsilon = epsilon_M[M - 1]) {
+fw_greedy <- function(A, M) {
   n <- dim(A)[1]
   S <- A
   P <- cell(n)
@@ -348,16 +367,7 @@ fw_greedy <- function(A, M, epsilon = epsilon_M[M - 1]) {
           v1 <- P[[i, k]]
           v2 <- P[[k, j]] + max(v1)
           v <- c(v1, v2[-1])
-          # greedy step
-          if ((length(v) > M + 2) && (epsilon_check(v, epsilon))) {
-            v <- epsilon_compress(v, epsilon)
-          }
-          # in case greedy failed due to epsilon < epsilon(M - 1)
-          if (length(v2) > M + 2) {
-            # truncate
-            v <- c(v[1], v[2:(M+1)], v[length(v)])
-          }
-          P[[i, j]] <- v
+          P[[i, j]] <- M_blocking(v, M + 1)
         }
       }
     }
@@ -367,9 +377,9 @@ fw_greedy <- function(A, M, epsilon = epsilon_M[M - 1]) {
 ```
 
 
-Greedy with $M = 3$ and $\epsilon = 0.4$
+Greedy with $M = 3$:
 ```{r}
-res_g <- fw_greedy(A, 3, 0.4)
+res_g <- fw_greedy(A, 3)
 # the full path
 P[[i, j]]
 # the stored path
@@ -397,9 +407,8 @@ A[(row(A) %% n) == (col(A) - 1 %% n)] <- 1
 res_f <- floyd_warshall(A)
 M <- 10
 res_d <- fw_downsample(A, M)
-res_g <- fw_greedy(A, M, 2/M)
+res_g <- fw_greedy(A, M)
 # stored paths
-res_f$P[[1, n]]
 res_d$P[[1, n]]
 res_g$P[[1, n]]
 # iterations for recovery
