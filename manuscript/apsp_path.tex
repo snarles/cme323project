@@ -1,0 +1,250 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{nips13submit_e,times}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{amssymb, amsmath}
+\usepackage{epsfig}
+\usepackage{array}
+\usepackage{ifthen}
+\usepackage{color}
+\usepackage{fancyhdr}
+\usepackage{graphicx, subcaption}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{mdframed}
+\usepackage{amsthm}
+%\documentstyle[nips13submit_09,times,art10]{article} % For LaTeX 2.09
+
+\usepackage{mathtools}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\newcommand{\real}{\mathbb{R}}
+\newcommand{\argmin}{\mathrm{argmin}}
+
+\title{All-Pairs Shortest Paths in Spark}
+
+
+\author{
+Charles Y.~Zheng and Jingshu Wang\\
+Department of Statistics\\
+Stanford University\\
+Stanford, CA 94305 \\
+\texttt{\{snarles, jinshuw\}@stanford.edu} \\
+\and
+\textbf{Arzav ~Jain} \\
+Department of Computer Science\\
+Stanford University\\
+Stanford, CA 94305 \\
+\texttt{arzavj@cs.stanford.edu} \\
+}
+
+% The \author macro works with any number of authors. There are two commands
+% used to separate the names and addresses of multiple authors: \And and \AND.
+%
+% Using \And between authors leaves it to \LaTeX{} to determine where to break
+% the lines. Using \AND forces a linebreak at that point. So, if \LaTeX{}
+% puts 3 of 4 authors names on the first line, and the last on the second
+% line, try using \AND instead of \And before the third author name.
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\nipsfinalcopy % Uncomment for camera-ready version
+
+\begin{document}
+
+
+\maketitle
+
+\section{Path finding in distributed APSP}
+
+The output of the original algorithm is a matrix of shortest distances $S \in \real^{n \times n}$ where 
+each $S_{ij}$ is the shortest distance from node $i$ to $j$. Here we want to add a path lookup function {\tt FindPath(i, j)} which returns for a pair of node $(i, j)$ the shortest path itself from node $i$ to node $j$. 
+
+There are three approaches to consider:
+\begin{itemize}
+\item Calculate {\tt FindPath(i, j)} directly from the distance matrix $S$
+\item Store one midpoint for each $(i, j)$ pair as a matrix $M \in \real^{n \times n}$ in the distributed block APSP algorithm, and then calculate {\tt FindPath(i, j)} from $M$
+\item For each $(i, j)$ pair, store two midpoints $m_1, m_2$ in a three-dimensional array $M \in \real^{n \times n \times 2}$ in the distributed block APSP algorithm, and then calculate {\tt FindPath(i, j)} from $M$.
+\end{itemize}
+
+Both the first two approaches need $n$ iterations in calculating {\tt path(i, j)} for the worst case, while we will show in this session that the third approach guarantees the number of iterations to be at most $\ceil{\log_2 n}$ with properly chosen midpoints. 
+
+
+\subsection{Creteria for choosing the midpoints}
+For an $(i, j)$ pair with its shortest path $i \to k_1 \to k_2 \to \cdots \to k_{L - 1} \to j$, define its path length as $l_{ij} = L$. We require the midpoints $m_1 = M_{ij1}$ and $m_2 = M_{ij2}$ to satisfy
+\begin{enumerate}
+\item $m_1, m_2 \in \{i, k_1, k_2, \cdots, k_{L-1}, j\}$
+\item $l_{ij} = l_{im_1} + l_{m_1m_2} + l_{m_2j}$
+\item $\max(l_{im_1}, l_{m_1m_2}, l_{m_2j}) \leq \max(l_{ij}/2, 1)$
+\end{enumerate}
+
+If $M$ satisfies the above creteria, then the number of iterations in the lookup function {\tt path(i, j)} will be at most $\ceil{\log_2 n}$. More details can be found in \ref{sec:correctness}.
+
+\subsection{Algorithm for updating the midpoints in distributed APSP}
+The initialization of $M$ is 
+\[
+M_{ij1}^{(0)} = M_{ij2}^{(0)} = 
+\begin{cases}
+i &\text{ if } (i \to j) \in E \text{ or } i = j\\
+\star &\text{ if } (i \to j) \notin E
+\end{cases}
+\]
+where $\star \notin V$ is some symbol to denote an invalid midpoint.
+To properly update midpoints in our distributed block APSP algorithm, we need to store and update another three-dimensional array $W \in \real^{n \times n \times 3}$ which stores for each $(i, j)$ pair and midpoints $(m_1, m_2)$ the current path lengths $l_{im_1}$, $l_{m_1m_2}$ and $l_{m_2j}$. The initialization of $W$ is
+\[
+W_{ij1}^{(0)} = W_{ij2}^{(0)} = 
+\begin{cases}
+0 &\text{ if } (i \to j) \in E \text{ or } i = j\\
+\infty &\text{ if } (i \to j) \notin E
+\end{cases}
+\]
+\[
+W_{ij3}^{(0)} = 
+\begin{cases}
+1 &\text{ if } (i \to j) \in E \text{ or } i = j\\
+\infty &\text{ if } (i \to j) \notin E
+\end{cases}
+\]
+
+For a path $i \to \cdots \to j$, denote $v_{ij} = (m_1, m_2, l_{im_1}, l_{m_1m_2}, l_{m_2j})$. Then for joining two paths $i \to \cdots \to k$ and $k \to \cdots \to j$, we define the following function {\tt MERGE}($v_{ik}, v_{kj}, k$) to get $v_{ij}$ for the joint path $i \to \cdots \to k \to \cdots \to j$:
+
+\begin{algorithm}[H]
+\caption{Merge midpoints of two adjacent paths}
+\begin{algorithmic}
+\Function{merge}{$v_1 = (m_1, m_2, l_1, l_2, l_3)$, $v_2 = (m_4, m_5, l_4, l_5, l_6)$, $m_3$}
+ \State $l = \sum_{i = 1}^6 l_i$
+ \For {$t = 1, 2, 3, 4$}
+ 	\If{$\sum_{i = 1}^t l_i \leq l/2 \ \& \sum_{i = 1}^{t + 1} l_i \geq l/2$}
+	  \State Break
+	\EndIf
+ \EndFor
+
+  Return $v = (m_j, m_{t+1}, \sum_{i = 1}^t l_i, l_{t + 1}, \sum_{i = t + 2}^6 l_i)$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+We call $v = (m_1, m_2, l_1, l_2, l_3)$ as \textit{flat} if 
+$$max(l_1, l_2, l_3) \leq \max(1, (l_1 + l_2 + l_3)/2) < \infty$$
+
+
+\begin{lemma}
+If $v_{ik}$ and $v_{kj}$ are \textit{flat} and $i \neq k \neq j$, then $v = {\tt MERGE}(v_{ik}, v_{kj}, k)$ is also \textit{flat}.
+\end{lemma}
+
+\begin{proof}
+Let $v_{ik} = (m_1, m_2, l_1, l_2, l_3)$, $v_{kj} = (m_4, m_5, l_4, l_5, l_6)$, $k = m_3$ and 
+$l = \sum_{s = 1}^6 l_s$. From $i\neq k \neq j$, we have $l \geq 2$. 
+
+As $v_{ik}$ and $v_{kj}$ are \textit{flat}, we have 
+$l_1 \leq \max(1, (l_1 + l_2 + l_3)/2) \leq l/2$ and similarly $l_6 \leq l/2$. Thus, there exists
+$t \in \{1, 2, 3, 4\}$ that both $\sum_{s = 1}^t l_s \leq l/2 $ and $\sum_{s = 1}^{t + 1} l_s \geq l/2$ holds.
+Also $l_{t + 1} \leq \max(1, (l_1 + l_2 + l_3)/2, (l_4 + l_5 + l_6)/2) \leq l/2$, thus 
+$v = {\tt MERGE}(v_{ik}, v_{kj}, k)$ is also \textit{flat}.
+\end{proof}
+
+We can now modify the original distributed block APSP algorithm to include updating $W$ and $M$. 
+
+Given an $n \times m$ distance matrix $A$ and an $n \times m$ distance matrix $B$ together with the midpoints matrices $(W^A, M^A)$ and $(W^B, M^B)$, define a minimum operation as 
+$(C, W^C, M^C) = \min_P\big((A, W^A, M^A), (B, W^B, M^B)\big)$ by
+\[
+C_{ij} = \min(A_{ij}, B_{ij})
+\]
+\[
+(M^C_{ij\cdot}, W^C_{ij\cdot}) = 
+\begin{cases}
+\vspace{1mm}
+(M^A_{ij\cdot}, W^A_{ij\cdot}) & \text{ if }C_{ij} = A_{ij} \\
+\vspace{1mm}
+(M^B_{ij\cdot}, W^B_{ij\cdot}) & \text{ if }C_{ij} = B_{ij} 
+\end{cases}
+\]
+
+
+
+Given an $n \times k$ distance matrix $A$ and a $k \times m$ distance matrix $B$ together with the midpoints matrices $(W^A, M^A)$ and $(W^B, M^B)$, define a \emph{min-plus} product $(C, W^C, M^C) = (A, W^A, M^A) \otimes_P (B, W^B, M^B)$ as
+\[
+C_{ij} = \min_{l = 1}^k A_{il} + B_{lj}
+\]
+\[
+(M^C_{ij\cdot}, W^C_{ij\cdot}) = 
+\begin{cases}
+\vspace{1mm}
+(M^A_{ij\cdot}, W^A_{ij\cdot}) & \text{ if }\argmin_l(A_{il} + B_{lj}) = j \\
+\vspace{1mm}
+(M^B_{ij\cdot}, W^B_{ij\cdot}) & \text{ if }\argmin_l(A_{il} + B_{lj}) = i \\
+\vspace{1mm}
+{\tt MERGE}\big((M^A_{il^*\cdot}, W^A_{il^*\cdot}), (M^B_{l^*j\cdot}, W^B_{l^*j\cdot}), l^*\big)
+& \text{ if } l^* = \argmin_l(A_{il} + B_{lj}) \neq i \text{ or } j
+\end{cases}
+\]
+for $i = 1,\hdots, n$ and $j = 1,\hdots, m$.
+
+Also, ${\tt APSP}_P(A, M^A, W^A)$ is defined as a modified local APSP method for finding the shortest distance matrix together with the desired midpoints and path lengths matrices. 
+
+Here, we give a shorthand description of the modified distributed block APSP including updating $W$ and $M$, without explicitly specifying the Spark operations.
+
+\begin{algorithm}[H]
+\caption{Path-Finding Distributed Block APSP (shorthand)}
+\begin{algorithmic}
+\Function{BlockAPSPath}{Adjacency matrix $A$ given as a {\tt BlockMatrix} with $\ell$ row blocks and $\ell$ column blocks, $M^{(0)}$, $W^{(0)}$}
+  \State $H^{(0)} \leftarrow (A, M^{(0)}, W^{(0)})$
+  \For{$k = 1,\hdots, \ell $}
+    \State [A-step]
+    \State $H^{kk(k)} \leftarrow \text{APSP}_P(H^{kk(k-1)})$
+    \State [B-step]
+    \For{$i =1,\hdots, \ell,\ j = 1,\hdots, \ell$} \emph{in parallel}
+      \If{$i = k$ and $j \neq k$}
+        \State $H^{kj(k)} \leftarrow \min_P(H^{kj(k-1)}, H^{kk(k)} \otimes_P H^{kj(k-1)})$ 
+      \EndIf
+      \If{$i \neq k$ and $j = k$}
+        \State $H^{ik(k)} \leftarrow \min_P(H^{ik(k-1)}, H^{ik(k-1)} \otimes_P H^{kk(k)})$
+      \EndIf
+    \EndFor
+    \State [C-step]
+    \For{$i = 1,\hdots, \ell,\ j = 1,\hdots, \ell$} \emph{in parallel}
+      \If{$i \neq k$ and $j \neq k$}
+        \State $H^{ij(k)} \leftarrow \min_P(H^{ij(k-1)}, H^{ik(k)} \otimes_P H^{kj(k)})$
+      \EndIf
+    \EndFor
+    \State [D-step]
+    \If{$k \equiv 0 \mod q$}
+      \State Checkpoint $H^{(k)}$
+    \EndIf
+  \EndFor
+  \State Return $(S, M, W) = H^{(\ell)}$, the APSP result tuple 
+  \EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{The path lookup function} \label{sec:correctness}
+After obtaining the the midpoints three-dimensional array $M$, we can efficiently lookup the shortest path 
+of an $(i, j)$ pair of nodes. The lookup function returns a vector of all the other nodes in the path in order except for the starting node $i$. Note that if there are multiple shortest paths, the algorithm is only able to find 
+one of them.
+
+\begin{algorithm}[H]
+\caption{Lookup the path from one node to another}
+\begin{algorithmic}
+\Function{FindPath}{$i, j$}
+ \If {i == j}
+  \State Return NULL
+ \EndIf
+ \If {$M_{ij1} == M_{ij2}$}
+  \State Return $j$
+ \EndIf
+  
+  Return $\big({\tt FindPath}(i, M_{ij1}), {\tt FindPath}(M_{ij1}, M_{ij2}), {\tt FindPath}(M_{ij2}, j)\big)$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+As $\max(l_{iM_{ij1}}, l_{M_{ij1}M_{ij2}}, l_{M_{ij2}j}) \leq \max(1, l_{ij}/2)$, the recursion depth of the above
+ algorithm is upper bounded by $\ceil{\log_2 l_{ij}}$, which is at most $\ceil{\log_2 n}$ for any node pair in the graph.
+
+
+\end{document}
