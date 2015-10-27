@@ -57,29 +57,99 @@ Stanford, CA 94305 \\
 
 \begin{document}
 
-
 \maketitle
+
+\begin{abstract}
+We consider the all-pairs-shortest-paths problem for a dense graph in
+a distributed setting, and study both the resource cost of computing
+the distance and midpoint matrices, and the resource cost of looking
+up the shortest path between any pair of nodes.  We extend a
+previously proposed algorithm for distributed APSP to include
+computation of a midpoint matrix; our algorithm for storing midpoints
+guarantees that the lookup of a length $L$ path requires at most
+$O(\log L)$ rounds of all-to-all communication, in contrast to the
+worst-case $O(L)$ sequential iterations required by existing midpoint
+storage approaches.  In distributed applications where latency between
+the driver and worker nodes creates a substantial overhead per round
+of all-to-all communication, our scheme results in much faster lookup
+times for long paths.
+\end{abstract}
 
 \section{Path finding in distributed APSP}
 
-The output of the original algorithm is a matrix of shortest distances $S \in \real^{n \times n}$ where 
-each $S_{ij}$ is the shortest distance from node $i$ to $j$. Here we want to add a path lookup function {\tt FindPath(i, j)} which returns for a pair of node $(i, j)$ the shortest path itself from node $i$ to node $j$. 
+The output of the original algorithm is a matrix of shortest distances
+$S \in \real^{n \times n}$ where each $S_{ij}$ is the shortest
+distance from node $i$ to $j$. Here we want to add a path lookup
+function {\tt FindPath(i, j)} which returns for a pair of node $(i,
+j)$ the shortest path itself from node $i$ to node $j$.
 
 There are three approaches to consider:
-\begin{itemize}
+\begin{enumerate}
 \item Calculate {\tt FindPath(i, j)} directly from the distance matrix $S$
 \item Store one midpoint for each $(i, j)$ pair as a matrix $M \in \real^{n \times n}$ in the distributed block APSP algorithm, and then calculate {\tt FindPath(i, j)} from $M$
 \item For each $(i, j)$ pair, store two midpoints $m_1, m_2$ in a three-dimensional array $M \in \real^{n \times n \times 2}$ in the distributed block APSP algorithm, and then calculate {\tt FindPath(i, j)} from $M$.
-\end{itemize}
+\item A generalization of approach 3, except storing up to $k$ midpoints $m_1,\hdots, m_k$ for each path.
+\end{enumerate}
 
-Both the first two approaches need $n$ iterations in calculating {\tt path(i, j)} for the worst case, while we will show in this session that the third approach guarantees the number of iterations to be at most $\ceil{\log_2 n}$ with properly chosen midpoints. 
+In all four approaches, the lookup function must make a total
+of $O(L)$ queries, where $L$ is the length of the shortest paths.
+However, in a distributed setting, we assume the possibility of making
+up to $n$ queries in parallel, comprising a single \emph{round} of
+all-to-all communication.  For all approaches considered, we therefore
+define an \emph{iteration} to include at most one round of all-to-all
+communication.  The ordered sequence of nodes in the path is built up
+iteration by iteration.  We begin with the endpoints of the path $\{i,
+j\}$.  In the first iteration, one runs a single query $Lookup(i, j)$,
+and the result is either an empty set $\{\}$, or up to $k$ midpoints
+$m_1,\hdots,m_k$.  If the empty set is returned, then we know that the
+path $\{i, j\}$ is of length one, and the algorithm is terminated.
+Otherwise, the current set of midpoints is $\{i, m_1, \hdots, m_k,
+j\}$, and the next iteration makes the $k+1$ queries \emph{in
+  parallel} to $Lookup(i, m_1)$, $Lookup(i, m_2)$, etc.  Since each
+query may result in the addition of up to $k$ new midpoints, the
+number of nodes in the working set may increase by $(k+1)k$ by the
+conclusion of the second iteration, hence the working set may be of
+size $(k+2)k + 2$ by the conclusion of the second iteration.  The
+maximum number of nodes by the end of the $m$th iteration given by the
+recursion $M_m = M_{m+1} + k(M_m-1)$, where $M_1 = 2$, hence the
+maximum number of queries in the $m$th iteration is given by $Q_m =
+M_{m-1}+1$.  Of course, both $M_m$ and $Q_m$ are bounded by the length
+of the path.
 
+Algorithm 1 has to potentially search the entire $i$th row and $j$th
+column per query, and hence has a computational cost of $O(n)$ per
+query, since $O(L)$ queries have to made, the total computational cost
+is $O(nL)$.  Algorithms 2-4 all have computational cost $O(k)$ per
+query, and since $O(L/k)$ queries have to be made, the total
+computational cost is $O(L)$ for all three algorithms.
 
-\subsection{Creteria for choosing the midpoints}
+If we consider the cost of computing the distance matrix $S$ and
+matrix of midpoints $M$, then Algorithm 1 requires the minimal
+computation and space, Algorithm 2 can be implemented to require about
+twice the computation and 1.5 times the space of Algorithm 1, and
+Algorithm 3 and 4 require at least $(k/2 - 1)$ times the space as
+Algorithm 1.  It is clear that Algorithm 2 allows one to invest extra
+time into the distance matrix calculation stage in order to gain a
+speedup in the path lookup stage.  However, what is the benefit of
+considering Algorithms 3 and 4?  How can we possibly improve the
+lookup time if the total computational cost per lookup is about the
+same?
+
+In distributed settings we observe that the clock-time required for a
+job is dominated by communication and latency rather than computation.
+Hence, the advantage of Algorithms type 3 and 4 over Algorithm 2 is
+that the number of parallel iterations may potentially be reduced.  We
+can prove that under the constraint that only one midpoint be stored
+per path, that the worst-case number of iterations is $n$.  In
+contrast, we will show in this section that using the third approach,
+we can guarantee the number of iterations to be at most $\ceil{\log_2
+  n}$ by properly choosing midpoints.
+
+\subsection{Criteria for choosing the midpoints}
 For an $(i, j)$ pair with its shortest path $i \to k_1 \to k_2 \to \cdots \to k_{L - 1} \to j$, define its path length as $l_{ij} = L$. We require the midpoints $m_1 = M_{ij1}$ and $m_2 = M_{ij2}$ to satisfy
 \begin{enumerate}
 \item $m_1, m_2 \in \{i, k_1, k_2, \cdots, k_{L-1}, j\}$
-\item $l_{ij} = l_{im_1} + l_{m_1m_2} + l_{m_2j}$
+\item $l_{ij} = l_{im_1} + l_{m_1m_2} + l_{m_2j}$ (implied by criteria 1)
 \item $\max(l_{im_1}, l_{m_1m_2}, l_{m_2j}) \leq \max(l_{ij}/2, 1)$
 \end{enumerate}
 
